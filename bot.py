@@ -9,6 +9,11 @@ GH_TOKEN = os.environ.get("GITHUB_TOKEN")
 GH_OWNER = os.environ.get("GITHUB_OWNER", "podobowopl-collab")
 GH_REPO  = os.environ.get("GITHUB_REPO",  "GRANT-AGENT-COURSE")
 
+if not TG_TOKEN:
+    raise ValueError("Ошибка: переменная TG_BOT_TOKEN не задана!")
+if not GH_TOKEN:
+    raise ValueError("Ошибка: переменная GITHUB_TOKEN не задана!")
+
 LESSONS = {
     "1.1": "M1-Osnovy/urok-01-part1",
     "1.2": "M1-Osnovy/urok-01-part2",
@@ -102,6 +107,12 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "❓ /help — помощь\n\n"
         "Просто пришли файл или выбери команду!",
         parse_mode="Markdown"
+    )
+
+async def upload_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📄 Чтобы загрузить файл — просто пришли его сюда (.md или .pdf).\n"
+        "Бот сам спросит, в какой урок загрузить."
     )
 
 async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -302,6 +313,7 @@ def main():
     app = Application.builder().token(TG_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("upload", upload_cmd))
     app.add_handler(CommandHandler("addlink", addlink_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
