@@ -423,6 +423,65 @@
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* ── Login screen ── */
+    #screen-login {
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+      min-height: 100dvh; padding-bottom: 0;
+    }
+    .login-top {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 60px 24px 32px;
+      text-align: center;
+    }
+    .login-logo {
+      width: 80px; height: 80px; border-radius: 24px;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--sky) 100%);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 36px;
+      box-shadow: 0 12px 40px rgba(37,99,235,0.55);
+    }
+    .login-top h1 {
+      font-size: 34px; font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, var(--sky) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .login-top p { font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .login-sheet {
+      background: rgba(15,23,42,0.85);
+      border-top: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border-radius: 28px 28px 0 0;
+      padding: 28px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+    }
+    .login-sheet h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .login-sheet .sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
+    .social-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 14px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      color: var(--text); font-family: 'Inter', sans-serif;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: all .2s; margin-bottom: 10px;
+    }
+    .social-btn:active { background: rgba(255,255,255,0.14); transform: scale(0.98); }
+    .or-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 14px 0; color: var(--muted); font-size: 12px;
+    }
+    .or-divider::before, .or-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--glass-border);
+    }
+    .forgot { text-align: right; font-size: 12px; color: var(--sky); margin-top: -8px; margin-bottom: 16px; cursor: pointer; }
+    .login-footer { text-align: center; font-size: 13px; color: var(--muted); margin-top: 16px; }
+    .login-footer span { color: var(--sky); font-weight: 600; cursor: pointer; }
+
     /* Generate button glow */
     .btn-generate {
       background: linear-gradient(135deg, #7C3AED 0%, #2563EB 50%, var(--sky) 100%);
@@ -440,9 +499,47 @@
 <div id="app">
 
   <!-- ══════════════════════════════════════
+       SCREEN LOGIN
+  ══════════════════════════════════════ -->
+  <div id="screen-login" class="screen active">
+    <div class="login-top">
+      <div class="login-logo">💡</div>
+      <h1>Grant AI</h1>
+      <p>Smart grant discovery<br>powered by artificial intelligence</p>
+    </div>
+    <div class="login-sheet">
+      <h2>Welcome back</h2>
+      <div class="sub">Sign in to your account</div>
+
+      <button class="social-btn" onclick="signInSocial('Google')">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.3 0 24 0 14.7 0 6.7 5.6 2.9 13.7l7.8 6C12.5 13.5 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 6.9-10 6.9-17z"/><path fill="#FBBC05" d="M10.7 28.3A14.5 14.5 0 0 1 9.5 24c0-1.5.3-2.9.7-4.3l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.9 10.7l7.8-6.4z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.2 1.5-5 2.3-8.4 2.3-6.2 0-11.5-4.2-13.3-9.9l-7.8 6C6.7 42.4 14.7 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <button class="social-btn" onclick="signInSocial('LinkedIn')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#0A66C2"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.13 1.44-2.13 2.94v5.67H9.37V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.59 0 4.26 2.37 4.26 5.44v6.3zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zm1.78 13.02H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></svg>
+        Continue with LinkedIn
+      </button>
+
+      <div class="or-divider">or sign in with email</div>
+
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@organisation.org" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" />
+      </div>
+      <div class="forgot" onclick="showToast('📧 Reset link sent to your email')">Forgot password?</div>
+      <button class="btn btn-primary" onclick="doLogin()">Sign In →</button>
+      <div class="login-footer">Don't have an account? <span onclick="doRegister()">Sign up free</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
        SCREEN 0 · HOME
   ══════════════════════════════════════ -->
-  <div id="screen-home" class="screen active">
+  <div id="screen-home" class="screen">
     <div class="home-hero">
       <div class="logo-wrap">💡</div>
       <h1>Grant AI</h1>
@@ -774,8 +871,8 @@ let SAVED_PROJECTS = [
 /* ═══════════════════════════════════════════
    NAVIGATION
 ═══════════════════════════════════════════ */
-let history = ['home'];
-let currentScreen = 'home';
+let history = ['login'];
+let currentScreen = 'login';
 
 function goTo(id, addHistory = true) {
   const prev = document.getElementById('screen-' + currentScreen);
@@ -791,8 +888,11 @@ function goTo(id, addHistory = true) {
 
   if (addHistory) history.push(id);
 
+  // Show/hide bottom nav
+  document.getElementById('bottom-nav').style.display = (id === 'login') ? 'none' : 'flex';
+
   // Update bottom nav
-  const navMap = { home:'home', brief:null, loading:null, results:'results', donors:'donors', projects:'projects', detail:null };
+  const navMap = { login:null, home:'home', brief:null, loading:null, results:'results', donors:'donors', projects:'projects', detail:null };
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const navKey = navMap[id];
   if (navKey) {
@@ -1041,8 +1141,27 @@ function showToast(msg) {
 }
 
 /* ═══════════════════════════════════════════
+   LOGIN
+═══════════════════════════════════════════ */
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-password').value;
+  if (!email || !pass) { showToast('⚠️ Please enter email and password'); return; }
+  showToast('✅ Signing in…');
+  setTimeout(() => goTo('home'), 1000);
+}
+function doRegister() {
+  showToast('✨ Registration coming soon!');
+}
+function signInSocial(provider) {
+  showToast(`🔐 Connecting to ${provider}…`);
+  setTimeout(() => goTo('home'), 1200);
+}
+
+/* ═══════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════ */
+document.getElementById('bottom-nav').style.display = 'none';
 renderGrants();
 renderDonors();
 renderProjects();
