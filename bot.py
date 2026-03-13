@@ -1,326 +1,434 @@
-import os
-import requests
+import asyncio
 import base64
+import json
+import logging
+import os
+import signal
+
+import requests
+from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 TG_TOKEN = os.environ.get("TG_BOT_TOKEN")
 GH_TOKEN = os.environ.get("GITHUB_TOKEN")
 GH_OWNER = os.environ.get("GITHUB_OWNER", "podobowopl-collab")
 GH_REPO  = os.environ.get("GITHUB_REPO",  "GRANT-AGENT-COURSE")
+PORT     = int(os.environ.get("PORT", 8080))
 
 if not TG_TOKEN:
-    raise ValueError("Ошибка: переменная TG_BOT_TOKEN не задана!")
+    raise ValueError("TG_BOT_TOKEN is not set")
 if not GH_TOKEN:
-    raise ValueError("Ошибка: переменная GITHUB_TOKEN не задана!")
+    raise ValueError("GITHUB_TOKEN is not set")
 
-LESSONS = {
-    "1.1": "M1-Osnovy/urok-01-part1",
-    "1.2": "M1-Osnovy/urok-01-part2",
-    "1.3": "M1-Osnovy/urok-01-part3",
-    "1.4": "M1-Osnovy/urok-02",
-    "1.5": "M1-Osnovy/urok-03",
-    "2.1": "M2-Instrumenty/urok-04",
-    "2.2": "M2-Instrumenty/urok-05",
-    "2.3": "M2-Instrumenty/urok-06",
-    "2.4": "M2-Instrumenty/urok-07",
-    "2.5": "M2-Instrumenty/urok-08",
-    "3.1": "M3-Podacha/urok-09",
-    "3.2": "M3-Podacha/urok-10",
-    "3.3": "M3-Podacha/urok-11",
-    "3.4": "M3-Podacha/urok-12",
-    "3.5": "M3-Podacha/urok-13",
-    "3.6": "M3-Podacha/urok-14",
-    "4.1": "M4-Monetizaciya/urok-15",
-    "4.2": "M4-Monetizaciya/urok-16",
-    "5.1": "M5-Strategii/urok-17",
-    "5.2": "M5-Strategii/urok-18",
-    "5.3": "M5-Strategii/urok-19",
-    "5.4": "M5-Strategii/urok-20",
+GH_BASE = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents"
+
+# ---------------------------------------------------------------------------
+# Folder structure to create on first run
+# ---------------------------------------------------------------------------
+INIT_FOLDERS = [
+    "grants/eu",
+    "grants/usa",
+    "grants/poland",
+    "grants/startups",
+    "projects/ideas",
+    "projects/applications",
+    "knowledge/guides",
+    "knowledge/templates",
+    "uploads",
+]
+
+# command → (root_folder, subfolders_or_None)
+COMMAND_FOLDERS = {
+    "grant":     ("grants",    ["eu", "usa", "poland", "startups"]),
+    "project":   ("projects",  ["ideas", "applications"]),
+    "knowledge": ("knowledge", ["guides", "templates"]),
+    "upload":    ("uploads",   None),
 }
 
-LESSON_NAMES = {
-    "1.1": "Профессия грантрайтера",
-    "1.2": "Типология заявок",
-    "1.3": "Анализ документации",
-    "1.4": "Форматы занятости",
-    "1.5": "Источники финансирования",
-    "2.1": "Платформы и инструменты",
-    "2.2": "Шаблоны документации",
-    "2.3": "Структура заявки",
-    "2.4": "Анализ аудитории",
-    "2.5": "Бюджетирование",
-    "3.1": "Структура крупных заявок",
-    "3.2": "Работа с платформами",
-    "3.3": "Коммуникация с донорами",
-    "3.4": "Работа с заказчиком",
-    "3.5": "Командная работа",
-    "3.6": "Правки и нестандартные ситуации",
-    "4.1": "Позиционирование",
-    "4.2": "Портфолио",
-    "5.1": "Мониторинг и отчётность",
-    "5.2": "Юридические аспекты",
-    "5.3": "Краудфандинг",
-    "5.4": "Стратегическое партнёрство",
-}
+ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "txt", "md"}
 
-user_state = {}
+# in-memory session state  {user_id: {"folder": str, "ready": bool}}
+user_state: dict = {}
 
-def gh_headers():
+
+# ---------------------------------------------------------------------------
+# GitHub helpers
+# ---------------------------------------------------------------------------
+def gh_headers() -> dict:
     return {
         "Authorization": f"token {GH_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
+        "Accept": "application/vnd.github.v3+json",
     }
 
-def upload_to_github(path, content, message):
-    url = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents/{path}"
-    r = requests.get(url, headers=gh_headers())
+
+def gh_upload_file(path: str, content_bytes: bytes, message: str) -> tuple[bool, dict]:
+    """Create or update a file in GitHub. Returns (ok, response_json)."""
+    url = f"{GH_BASE}/{path}"
+    r = requests.get(url, headers=gh_headers(), timeout=15)
     sha = r.json().get("sha") if r.status_code == 200 else None
-    encoded = base64.b64encode(content if isinstance(content, bytes) else content.encode()).decode()
-    data = {"message": message, "content": encoded}
+
+    payload: dict = {
+        "message": message,
+        "content": base64.b64encode(content_bytes).decode(),
+    }
     if sha:
-        data["sha"] = sha
-    r = requests.put(url, json=data, headers=gh_headers())
-    return r.status_code in [200, 201]
+        payload["sha"] = sha
 
-def lesson_keyboard(prefix=""):
-    buttons = []
-    modules = {"М1": ["1.1","1.2","1.3","1.4","1.5"],
-               "М2": ["2.1","2.2","2.3","2.4","2.5"],
-               "М3": ["3.1","3.2","3.3","3.4","3.5","3.6"],
-               "М4": ["4.1","4.2"],
-               "М5": ["5.1","5.2","5.3","5.4"]}
-    for mod, lessons in modules.items():
-        row = [InlineKeyboardButton(f"{l}", callback_data=f"{prefix}{l}") for l in lessons]
-        buttons.append([InlineKeyboardButton(f"── {mod} ──", callback_data="noop")])
-        buttons.append(row)
-    return InlineKeyboardMarkup(buttons)
+    r = requests.put(url, json=payload, headers=gh_headers(), timeout=30)
+    return r.status_code in (200, 201), r.json()
 
-async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+def gh_list_files(folder: str = "", depth: int = 0) -> list[dict]:
+    """Recursively list all non-.gitkeep files under *folder*."""
+    if depth > 5:
+        return []
+    url = f"{GH_BASE}/{folder}" if folder else GH_BASE
+    r = requests.get(url, headers=gh_headers(), timeout=15)
+    if r.status_code != 200:
+        return []
+    items = r.json()
+    if not isinstance(items, list):
+        return []
+
+    result = []
+    for item in items:
+        if item["type"] == "file" and item["name"] != ".gitkeep":
+            result.append({
+                "name": item["name"],
+                "path": item["path"],
+                "size": item.get("size", 0),
+                "download_url": item.get("download_url"),
+            })
+        elif item["type"] == "dir":
+            result.extend(gh_list_files(item["path"], depth + 1))
+    return result
+
+
+def ensure_folder_structure() -> None:
+    """Create .gitkeep placeholders for every required folder."""
+    for folder in INIT_FOLDERS:
+        path = f"{folder}/.gitkeep"
+        url = f"{GH_BASE}/{path}"
+        r = requests.get(url, headers=gh_headers(), timeout=10)
+        if r.status_code == 404:
+            payload = {
+                "message": f"chore: init folder {folder}",
+                "content": base64.b64encode(b"").decode(),
+            }
+            r2 = requests.put(url, json=payload, headers=gh_headers(), timeout=15)
+            if r2.status_code in (200, 201):
+                logger.info("Created GitHub folder: %s", folder)
+            else:
+                logger.warning("Could not create folder %s: %s", folder, r2.status_code)
+
+
+# ---------------------------------------------------------------------------
+# Telegram command handlers
+# ---------------------------------------------------------------------------
+async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "✦ *Grant Architect Bot*\n\n"
-        "Привет! Я файловый ассистент курса.\n\n"
-        "Что я умею:\n"
-        "📄 /upload — загрузить MD файл в урок\n"
-        "🔗 /addlink — добавить ссылку в урок\n"
-        "📋 /status — статус заполнения курса\n"
-        "❓ /help — помощь\n\n"
-        "Просто пришли файл или выбери команду!",
-        parse_mode="Markdown"
-    )
-
-async def upload_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📄 Чтобы загрузить файл — просто пришли его сюда (.md или .pdf).\n"
-        "Бот сам спросит, в какой урок загрузить."
-    )
-
-async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    doc = update.message.document
-    uid = update.effective_user.id
-    fname = doc.file_name or "file"
-    
-    # save file info to state
-    user_state[uid] = {"action": "upload", "file_id": doc.file_id, "fname": fname}
-    
-    ext = fname.split(".")[-1].lower()
-    if ext == "md":
-        ftype = "MD (контент урока)"
-    elif ext == "pdf":
-        ftype = "PDF (материал)"
-    else:
-        ftype = fname
-    
-    await update.message.reply_text(
-        f"📄 Получен файл: *{fname}* ({ftype})\n\nВыбери урок куда загрузить:",
+        "Я храню файлы для курса и помогаю искать гранты.\n\n"
+        "📁 *Загрузка файлов:*\n"
+        "/grant — сохранить в /grants\n"
+        "/project — сохранить в /projects\n"
+        "/knowledge — сохранить в /knowledge\n"
+        "/upload — сохранить в /uploads\n\n"
+        "🔍 *Поиск:*\n"
+        "/search слово — поиск файлов по имени\n\n"
+        "Форматы: PDF, DOCX, TXT, MD",
         parse_mode="Markdown",
-        reply_markup=lesson_keyboard("upload_")
     )
 
-async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "✦ *Помощь — Grant Architect Bot*\n\n"
+        "*Как загрузить файл:*\n"
+        "1. Отправь команду (/grant, /project, /knowledge, /upload)\n"
+        "2. Выбери подпапку (кнопки появятся)\n"
+        "3. Пришли файл (PDF, DOCX, DOC, TXT, MD)\n"
+        "4. Файл автоматически сохранится в GitHub\n\n"
+        "*Поиск:*\n"
+        "`/search грант` — ищет по имени файлов в репозитории\n\n"
+        "*Структура папок в GitHub:*\n"
+        "```\n"
+        "grants/  eu/ usa/ poland/ startups/\n"
+        "projects/  ideas/ applications/\n"
+        "knowledge/  guides/ templates/\n"
+        "uploads/\n"
+        "```\n"
+        "*API для приложения:*\n"
+        "`GET /api/files` — список всех файлов",
+        parse_mode="Markdown",
+    )
+
+
+async def _set_upload_mode(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    mode: str,
+) -> None:
+    uid = update.effective_user.id
+    root_folder, subfolders = COMMAND_FOLDERS[mode]
+
+    if subfolders:
+        buttons: list[list] = []
+        row: list = []
+        for sf in subfolders:
+            row.append(
+                InlineKeyboardButton(sf, callback_data=f"sf_{root_folder}/{sf}")
+            )
+            if len(row) == 3:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        buttons.append([
+            InlineKeyboardButton(
+                f"📂 Корень ({root_folder}/)",
+                callback_data=f"sf_{root_folder}",
+            )
+        ])
+        user_state[uid] = {"mode": mode, "folder": root_folder, "ready": False}
+        await update.message.reply_text(
+            f"📁 Выбери подпапку для *{root_folder}/*:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+    else:
+        user_state[uid] = {"mode": mode, "folder": root_folder, "ready": True}
+        await update.message.reply_text(
+            f"📤 Готов! Пришли файл — сохраню в *{root_folder}/*\n"
+            "Форматы: PDF, DOCX, TXT, MD",
+            parse_mode="Markdown",
+        )
+
+
+async def grant_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _set_upload_mode(update, ctx, "grant")
+
+
+async def project_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _set_upload_mode(update, ctx, "project")
+
+
+async def knowledge_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _set_upload_mode(update, ctx, "knowledge")
+
+
+async def upload_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _set_upload_mode(update, ctx, "upload")
+
+
+async def subfolder_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
-    data = query.data
+    # data = "sf_grants/eu" or "sf_grants"
+    folder_path = query.data[3:]  # strip "sf_"
+    state = user_state.get(uid, {})
+    state["folder"] = folder_path
+    state["ready"] = True
+    user_state[uid] = state
+    await query.edit_message_text(
+        f"✅ Папка выбрана: *{folder_path}/*\n\nТеперь пришли файл (PDF, DOCX, TXT, MD).",
+        parse_mode="Markdown",
+    )
 
-    if data == "noop":
-        return
 
-    # UPLOAD to lesson
-    if data.startswith("upload_"):
-        lesson_id = data.replace("upload_", "")
-        state = user_state.get(uid, {})
-        if not state or state.get("action") != "upload":
-            await query.edit_message_text("⚠ Сначала пришли файл!")
-            return
-
-        await query.edit_message_text(f"⏳ Загружаю в урок {lesson_id}...")
-
-        file_id = state["file_id"]
-        fname = state["fname"]
-        lesson_path = LESSONS.get(lesson_id, "")
-        if not lesson_path:
-            await query.edit_message_text("⚠ Урок не найден!")
-            return
-
-        # download file
-        tg_file = await ctx.bot.get_file(file_id)
-        file_bytes = await tg_file.download_as_bytearray()
-
-        ext = fname.split(".")[-1].lower()
-        if ext == "md":
-            gh_path = f"{lesson_path}/01-content.md"
-            msg = f"📄 Обновлён контент: урок {lesson_id}"
-        else:
-            gh_path = f"{lesson_path}/materials/{fname}"
-            msg = f"📁 Добавлен материал: урок {lesson_id} — {fname}"
-
-        ok = upload_to_github(gh_path, bytes(file_bytes), msg)
-        lesson_name = LESSON_NAMES.get(lesson_id, lesson_id)
-
-        if ok:
-            await query.edit_message_text(
-                f"✅ *Готово!*\n\n"
-                f"📌 Урок {lesson_id}: {lesson_name}\n"
-                f"📄 Файл: {fname}\n"
-                f"📂 Путь: `{gh_path}`\n\n"
-                f"Файл загружен на GitHub ✦",
-                parse_mode="Markdown"
-            )
-        else:
-            await query.edit_message_text("❌ Ошибка загрузки. Проверь токен GitHub.")
-        
-        user_state.pop(uid, None)
-
-    # ADDLINK to lesson
-    elif data.startswith("link_"):
-        lesson_id = data.replace("link_", "")
-        state = user_state.get(uid, {})
-        if not state or state.get("action") != "addlink":
-            await query.edit_message_text("⚠ Сначала пришли ссылку командой /addlink")
-            return
-
-        lesson_path = LESSONS.get(lesson_id, "")
-        link = state.get("link", "")
-        desc = state.get("desc", "Материал")
-        lesson_name = LESSON_NAMES.get(lesson_id, lesson_id)
-
-        # append to 02-links.md
-        gh_path = f"{lesson_path}/02-links.md"
-        url = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents/{gh_path}"
-        r = requests.get(url, headers=gh_headers())
-        
-        if r.status_code == 200:
-            existing = base64.b64decode(r.json()["content"]).decode()
-            sha = r.json()["sha"]
-        else:
-            existing = f"# Ссылки — Урок {lesson_id}: {lesson_name}\n\n"
-            sha = None
-
-        new_content = existing + f"- [{desc}]({link})\n"
-        encoded = base64.b64encode(new_content.encode()).decode()
-        payload = {"message": f"🔗 Добавлена ссылка: урок {lesson_id}", "content": encoded}
-        if sha:
-            payload["sha"] = sha
-        
-        r2 = requests.put(url, json=payload, headers=gh_headers())
-        ok = r2.status_code in [200, 201]
-
-        if ok:
-            await query.edit_message_text(
-                f"✅ *Ссылка добавлена!*\n\n"
-                f"📌 Урок {lesson_id}: {lesson_name}\n"
-                f"🔗 {desc}\n`{link}`",
-                parse_mode="Markdown"
-            )
-        else:
-            await query.edit_message_text("❌ Ошибка. Проверь токен GitHub.")
-        
-        user_state.pop(uid, None)
-
-async def addlink_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    args = ctx.args
-    if len(args) < 1:
-        await update.message.reply_text(
-            "Используй так:\n`/addlink https://... Описание ссылки`",
-            parse_mode="Markdown"
-        )
-        return
-    link = args[0]
-    desc = " ".join(args[1:]) if len(args) > 1 else "Материал"
+async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    user_state[uid] = {"action": "addlink", "link": link, "desc": desc}
-    await update.message.reply_text(
-        f"🔗 Ссылка: {link}\n📝 Описание: {desc}\n\nВыбери урок:",
-        reply_markup=lesson_keyboard("link_")
-    )
+    state = user_state.get(uid, {})
 
-async def status_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ Проверяю GitHub...")
-    filled = []
-    empty = []
-    for lid, path in LESSONS.items():
-        url = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents/{path}/01-content.md"
-        r = requests.get(url, headers=gh_headers())
-        if r.status_code == 200:
-            size = r.json().get("size", 0)
-            if size > 100:
-                filled.append(f"✅ {lid} — {LESSON_NAMES[lid]}")
-            else:
-                empty.append(f"⬜ {lid} — {LESSON_NAMES[lid]}")
-        else:
-            empty.append(f"❌ {lid} — {LESSON_NAMES[lid]}")
-    
-    msg = "📊 *Статус курса Grant Architect*\n\n"
-    if filled:
-        msg += f"*Заполнено ({len(filled)}/22):*\n" + "\n".join(filled) + "\n\n"
-    if empty:
-        msg += f"*Пустые ({len(empty)}/22):*\n" + "\n".join(empty)
-    
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "✦ *Grant Architect Bot — Помощь*\n\n"
-        "*Загрузка файлов:*\n"
-        "Просто пришли .md или .pdf файл → выбери урок\n\n"
-        "*Добавить ссылку:*\n"
-        "`/addlink https://example.com Название`\n\n"
-        "*Статус курса:*\n"
-        "`/status` — покажет какие уроки заполнены\n\n"
-        "*Форматы файлов:*\n"
-        "• .md → идёт в 01-content.md урока\n"
-        "• .pdf → идёт в папку materials/\n"
-        "• ссылка → идёт в 02-links.md урока",
-        parse_mode="Markdown"
-    )
-
-async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text.startswith("http"):
-        uid = update.effective_user.id
-        user_state[uid] = {"action": "addlink", "link": text, "desc": "Материал"}
+    if not state.get("ready"):
         await update.message.reply_text(
-            f"🔗 Ссылка получена!\nВыбери урок:",
-            reply_markup=lesson_keyboard("link_")
+            "⚠ Сначала выбери тип файла:\n/grant /project /knowledge /upload"
         )
+        return
+
+    doc = update.message.document
+    fname = doc.file_name or "file"
+    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+
+    if ext not in ALLOWED_EXTENSIONS:
+        await update.message.reply_text(
+            f"⚠ Формат .{ext} не поддерживается.\n"
+            f"Поддерживаются: {', '.join(sorted(ALLOWED_EXTENSIONS)).upper()}"
+        )
+        return
+
+    status_msg = await update.message.reply_text(
+        f"⏳ Скачиваю *{fname}*...", parse_mode="Markdown"
+    )
+
+    # Download from Telegram
+    try:
+        tg_file = await ctx.bot.get_file(doc.file_id)
+        file_bytes = bytes(await tg_file.download_as_bytearray())
+    except Exception as exc:
+        await status_msg.edit_text(f"❌ Ошибка скачивания из Telegram:\n`{exc}`", parse_mode="Markdown")
+        return
+
+    await status_msg.edit_text(f"⏳ Загружаю в GitHub...", parse_mode="Markdown")
+
+    folder = state["folder"]
+    gh_path = f"{folder}/{fname}"
+    commit_msg = f"upload: {gh_path} via Telegram bot"
+
+    ok, resp = gh_upload_file(gh_path, file_bytes, commit_msg)
+
+    if ok:
+        size_kb = len(file_bytes) / 1024
+        logger.info("Uploaded to GitHub: %s", gh_path)
+        await status_msg.edit_text(
+            f"✅ *Загружено в GitHub!*\n\n"
+            f"📄 Файл: `{fname}`\n"
+            f"📂 Путь: `{gh_path}`\n"
+            f"📦 Размер: {size_kb:.1f} KB\n\n"
+            f"✦ Uploaded to GitHub: {gh_path}",
+            parse_mode="Markdown",
+        )
+        user_state.pop(uid, None)
     else:
-        await update.message.reply_text(
-            "Пришли файл (.md или .pdf) или ссылку.\nИли выбери команду: /upload /addlink /status"
+        err = resp.get("message", "Unknown error")
+        await status_msg.edit_text(
+            f"❌ Ошибка загрузки в GitHub:\n`{err}`\n\n"
+            "Проверь GITHUB_TOKEN и права на репозиторий.",
+            parse_mode="Markdown",
         )
 
-def main():
-    app = Application.builder().token(TG_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("upload", upload_cmd))
-    app.add_handler(CommandHandler("addlink", addlink_cmd))
-    app.add_handler(CommandHandler("status", status_cmd))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    print("✦ Grant Architect Bot запущен!")
-    app.run_polling()
+
+async def search_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not ctx.args:
+        await update.message.reply_text(
+            "Использование: `/search keyword`", parse_mode="Markdown"
+        )
+        return
+
+    keyword = " ".join(ctx.args).lower()
+    await update.message.reply_text(
+        f"🔍 Ищу файлы с `{keyword}`...", parse_mode="Markdown"
+    )
+
+    all_files = gh_list_files()
+    matches = [
+        f for f in all_files
+        if keyword in f["name"].lower() or keyword in f["path"].lower()
+    ]
+
+    if not matches:
+        await update.message.reply_text(
+            f"❌ Файлы по запросу *{keyword}* не найдены.", parse_mode="Markdown"
+        )
+        return
+
+    lines = [f"✅ Найдено: {len(matches)} файл(ов) по запросу *{keyword}*\n"]
+    for f in matches[:20]:
+        size_kb = f["size"] / 1024
+        lines.append(f"📄 `{f['path']}` ({size_kb:.1f} KB)")
+    if len(matches) > 20:
+        lines.append(f"\n…и ещё {len(matches) - 20} файлов")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------------
+# aiohttp web server  (/api/files, /health)
+# ---------------------------------------------------------------------------
+async def api_files(request: web.Request) -> web.Response:
+    folder = request.rel_url.query.get("folder", "")
+    try:
+        files = gh_list_files(folder)
+        return web.json_response({
+            "ok": True,
+            "count": len(files),
+            "repo": f"{GH_OWNER}/{GH_REPO}",
+            "files": files,
+        })
+    except Exception as exc:
+        logger.exception("api_files error")
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def api_health(request: web.Request) -> web.Response:
+    return web.json_response({
+        "status": "ok",
+        "service": "grant-architect-bot",
+        "repo": f"{GH_OWNER}/{GH_REPO}",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+async def main() -> None:
+    # 1. Initialise GitHub folder structure (blocking, but runs once at startup)
+    logger.info("Initialising GitHub folder structure…")
+    try:
+        ensure_folder_structure()
+    except Exception as exc:
+        logger.warning("Could not init folder structure: %s", exc)
+
+    # 2. Build Telegram application
+    tg_app = Application.builder().token(TG_TOKEN).build()
+    tg_app.add_handler(CommandHandler("start",     start))
+    tg_app.add_handler(CommandHandler("help",      help_cmd))
+    tg_app.add_handler(CommandHandler("grant",     grant_cmd))
+    tg_app.add_handler(CommandHandler("project",   project_cmd))
+    tg_app.add_handler(CommandHandler("knowledge", knowledge_cmd))
+    tg_app.add_handler(CommandHandler("upload",    upload_cmd))
+    tg_app.add_handler(CommandHandler("search",    search_cmd))
+    tg_app.add_handler(CallbackQueryHandler(subfolder_callback, pattern=r"^sf_"))
+    tg_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
+    # 3. Build aiohttp web app
+    web_app = web.Application()
+    web_app.router.add_get("/",          api_health)
+    web_app.router.add_get("/health",    api_health)
+    web_app.router.add_get("/api/files", api_files)
+
+    # 4. Run Telegram polling + HTTP server concurrently
+    async with tg_app:
+        await tg_app.start()
+        await tg_app.updater.start_polling(drop_pending_updates=True)
+        logger.info("✦ Grant Architect Bot запущен!")
+
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        await site.start()
+        logger.info("✦ Web server on port %d", PORT)
+
+        # Block until SIGINT / SIGTERM
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop.set)
+        await stop.wait()
+
+        logger.info("Shutting down…")
+        await tg_app.updater.stop()
+        await tg_app.stop()
+        await runner.cleanup()
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
