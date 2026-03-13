@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Grant AI — Smart Grant Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0F172A;
+      --surface:   rgba(255,255,255,0.06);
+      --glass:     rgba(255,255,255,0.10);
+      --glass-border: rgba(255,255,255,0.15);
+      --blue:      #2563EB;
+      --sky:       #38BDF8;
+      --text:      #F1F5F9;
+      --muted:     #94A3B8;
+      --success:   #34D399;
+      --warn:      #FBBF24;
+      --danger:    #F87171;
+    }
+    html, body {
+      height: 100%; width: 100%;
+      background: var(--bg);
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      overflow: hidden;
+    }
+    /* ── App Shell ── */
+    #app {
+      position: relative;
+      max-width: 430px;
+      margin: 0 auto;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    /* Background gradient blobs */
+    #app::before {
+      content: '';
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 15% 20%, rgba(37,99,235,0.35) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 35% at 85% 75%, rgba(56,189,248,0.20) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 55% 50%, rgba(99,102,241,0.15) 0%, transparent 65%);
+      pointer-events: none; z-index: 0;
+    }
+    /* ── Screens ── */
+    .screen {
+      position: absolute; inset: 0;
+      overflow-y: auto;
+      padding: 0 0 90px;
+      z-index: 1;
+      opacity: 0;
+      transform: translateX(100%);
+      transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.4,0,.2,1);
+      pointer-events: none;
+    }
+    .screen.active {
+      opacity: 1; transform: translateX(0); pointer-events: all;
+    }
+    .screen.exit-left {
+      opacity: 0; transform: translateX(-60px);
+    }
+    /* ── Top Bar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 52px 20px 16px;
+      background: linear-gradient(to bottom, rgba(15,23,42,0.9) 0%, transparent 100%);
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(12px);
+    }
+    .topbar h2 { font-size: 17px; font-weight: 700; }
+    .back-btn {
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      color: var(--text); border-radius: 50%;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 18px; transition: background .2s;
+    }
+    .back-btn:active { background: var(--glass); }
+    /* ── Glass Card ── */
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 20px;
+      margin: 0 16px 14px;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .card:active { transform: scale(0.98); }
+    /* ── Buttons ── */
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 16px;
+      border: none; border-radius: 14px;
+      font-family: 'Inter', sans-serif;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+      position: relative; overflow: hidden;
+    }
+    .btn::after {
+      content: ''; position: absolute; inset: 0;
+      background: rgba(255,255,255,0);
+      transition: background .15s;
+    }
+    .btn:active::after { background: rgba(255,255,255,0.1); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue) 0%, #1D4ED8 100%);
+      color: #fff;
+      box-shadow: 0 4px 24px rgba(37,99,235,0.45);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 32px rgba(37,99,235,0.6); transform: translateY(-1px); }
+    .btn-sky {
+      background: linear-gradient(135deg, var(--sky) 0%, #0EA5E9 100%);
+      color: var(--bg);
+      box-shadow: 0 4px 20px rgba(56,189,248,0.35);
+    }
+    .btn-ghost {
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      color: var(--text);
+    }
+    .btn-ghost:hover { background: var(--glass); }
+    .btn-sm {
+      width: auto; padding: 9px 18px;
+      font-size: 13px; border-radius: 10px;
+    }
+    /* ── Form ── */
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 500; letter-spacing: .4px; text-transform: uppercase; }
+    .field input, .field textarea, .field select {
+      width: 100%; padding: 13px 16px;
+      background: var(--surface);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      color: var(--text); font-family: 'Inter', sans-serif; font-size: 15px;
+      outline: none; transition: border-color .2s, box-shadow .2s;
+    }
+    .field input::placeholder, .field textarea::placeholder { color: #475569; }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.2);
+    }
+    .field textarea { resize: none; min-height: 80px; }
+    .field select option { background: #1E293B; }
+    /* ── Badge ── */
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; letter-spacing: .3px;
+    }
+    .badge-blue { background: rgba(37,99,235,0.25); color: var(--sky); border: 1px solid rgba(37,99,235,0.4); }
+    .badge-green { background: rgba(52,211,153,0.2); color: var(--success); border: 1px solid rgba(52,211,153,0.35); }
+    .badge-warn  { background: rgba(251,191,36,0.2);  color: var(--warn);    border: 1px solid rgba(251,191,36,0.35); }
+    .badge-red   { background: rgba(248,113,113,0.2); color: var(--danger);  border: 1px solid rgba(248,113,113,0.35); }
+
+    /* ── Progress Bar ── */
+    .progress-wrap { background: rgba(255,255,255,0.08); border-radius: 99px; height: 6px; overflow: hidden; }
+    .progress-bar  { height: 100%; border-radius: 99px; transition: width 1s ease; }
+    .bar-blue  { background: linear-gradient(90deg, var(--blue), var(--sky)); }
+    .bar-green { background: linear-gradient(90deg, #059669, var(--success)); }
+    .bar-warn  { background: linear-gradient(90deg, #D97706, var(--warn)); }
+
+    /* ── Avatar ── */
+    .avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 0 — HOME
+    ───────────────────────────────────────────── */
+    #screen-home {
+      padding-bottom: 40px;
+    }
+    .home-hero {
+      padding: 64px 20px 32px;
+      text-align: center;
+    }
+    .logo-wrap {
+      width: 72px; height: 72px; border-radius: 22px;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--sky) 100%);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 32px;
+      box-shadow: 0 8px 32px rgba(37,99,235,0.5);
+    }
+    .home-hero h1 {
+      font-size: 32px; font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, var(--sky) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .home-hero p { font-size: 15px; color: var(--muted); line-height: 1.5; }
+    .home-stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px; padding: 0 16px 24px;
+    }
+    .stat-card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px; padding: 14px 10px;
+      text-align: center; backdrop-filter: blur(16px);
+    }
+    .stat-card .num { font-size: 20px; font-weight: 800; color: var(--sky); }
+    .stat-card .lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .home-menu { padding: 0 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .menu-card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px; padding: 20px 16px;
+      cursor: pointer; transition: all .25s;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .menu-card:hover  { transform: translateY(-3px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+    .menu-card:active { transform: scale(0.96); }
+    .menu-card .icon  { font-size: 28px; margin-bottom: 10px; }
+    .menu-card .title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .menu-card .desc  { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .menu-card.featured {
+      grid-column: span 2;
+      background: linear-gradient(135deg, rgba(37,99,235,0.3) 0%, rgba(56,189,248,0.2) 100%);
+      border-color: rgba(37,99,235,0.4);
+      display: flex; align-items: center; gap: 16px;
+    }
+    .menu-card.featured .icon { margin-bottom: 0; font-size: 36px; }
+    .menu-card.featured .text .title { font-size: 16px; }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 1 — BRIEF
+    ───────────────────────────────────────────── */
+    .section-pad { padding: 0 16px; }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 2 — LOADING
+    ───────────────────────────────────────────── */
+    #screen-loading {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100dvh; padding: 40px 24px;
+    }
+    .loader-ring {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: var(--blue);
+      border-right-color: var(--sky);
+      animation: spin 1.1s linear infinite;
+      margin-bottom: 32px;
+      position: relative;
+    }
+    .loader-ring::after {
+      content: '🔍'; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%,-50%);
+      font-size: 28px; animation: spin-rev 1.1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin-rev { to { transform: translate(-50%,-50%) rotate(-360deg); } }
+    .loader-steps { width: 100%; max-width: 320px; }
+    .loader-step {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 13px; color: var(--muted);
+      transition: color .3s;
+    }
+    .loader-step.done { color: var(--success); }
+    .loader-step.active { color: var(--text); }
+    .step-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); flex-shrink: 0;
+      transition: background .3s;
+    }
+    .loader-step.done .step-dot   { background: var(--success); }
+    .loader-step.active .step-dot { background: var(--sky); animation: pulse 1s ease infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 3 — RESULTS
+    ───────────────────────────────────────────── */
+    .grant-card { cursor: pointer; }
+    .grant-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+    .grant-title  { font-size: 15px; font-weight: 700; line-height: 1.3; }
+    .grant-org    { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .grant-amount { font-size: 15px; font-weight: 800; color: var(--sky); white-space: nowrap; }
+    .grant-row    { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
+    .grant-label  { color: var(--muted); }
+    .grant-actions{ display: flex; gap: 10px; margin-top: 14px; }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 4 — DONORS
+    ───────────────────────────────────────────── */
+    .search-wrap {
+      position: relative; margin: 0 16px 14px;
+    }
+    .search-wrap input {
+      width: 100%; padding: 13px 16px 13px 44px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      color: var(--text); font-family: 'Inter', sans-serif; font-size: 15px;
+      outline: none;
+    }
+    .search-wrap input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.2); }
+    .search-icon {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      font-size: 16px; pointer-events: none;
+    }
+    .donor-card {
+      display: flex; align-items: center; gap: 14px;
+      cursor: pointer;
+    }
+    .donor-logo {
+      width: 48px; height: 48px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; flex-shrink: 0;
+    }
+    .donor-info { flex: 1; min-width: 0; }
+    .donor-name { font-size: 15px; font-weight: 700; }
+    .donor-type { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .donor-grant { font-size: 12px; color: var(--sky); font-weight: 600; margin-top: 4px; }
+    .donor-arrow { font-size: 18px; color: var(--muted); }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 5 — MY PROJECTS
+    ───────────────────────────────────────────── */
+    .project-card { cursor: pointer; }
+    .project-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+    .project-name   { font-size: 15px; font-weight: 700; }
+    .project-region { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .project-progress { margin-top: 10px; }
+    .proj-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+    }
+    .empty-state .emoji { font-size: 52px; margin-bottom: 16px; }
+    .empty-state h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .empty-state p { font-size: 14px; color: var(--muted); line-height: 1.5; }
+
+    /* ─────────────────────────────────────────────
+       SCREEN 6 — GRANT DETAIL
+    ───────────────────────────────────────────── */
+    .detail-cover {
+      height: 180px;
+      background: linear-gradient(135deg, rgba(37,99,235,0.5), rgba(56,189,248,0.3));
+      display: flex; align-items: flex-end;
+      padding: 20px; position: relative; overflow: hidden;
+    }
+    .detail-cover::before {
+      content: ''; position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+    .detail-tag { font-size: 22px; margin-right: 12px; }
+    .detail-title-wrap { flex: 1; }
+    .detail-cover h2 { font-size: 20px; font-weight: 800; line-height: 1.2; }
+    .detail-cover p  { font-size: 13px; color: rgba(255,255,255,0.7); margin-top: 4px; }
+    .detail-section { padding: 16px 16px 0; }
+    .detail-section h3 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .lbl { color: var(--muted); }
+    .info-row .val { font-weight: 600; }
+    .requirement-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; font-size: 14px; }
+    .req-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sky); margin-top: 6px; flex-shrink: 0; }
+
+    /* ─────────────────────────────────────────────
+       BOTTOM NAV
+    ───────────────────────────────────────────── */
+    #bottom-nav {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: 100%; max-width: 430px;
+      background: rgba(15,23,42,0.85);
+      backdrop-filter: blur(24px);
+      border-top: 1px solid var(--glass-border);
+      display: flex; z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom, 12px);
+    }
+    .nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      padding: 10px 4px 8px; cursor: pointer;
+      transition: color .2s;
+      color: var(--muted); font-size: 10px; font-weight: 500; gap: 4px;
+    }
+    .nav-item .nav-icon { font-size: 22px; transition: transform .2s; }
+    .nav-item.active    { color: var(--sky); }
+    .nav-item.active .nav-icon { transform: scale(1.15); }
+    .nav-item:active .nav-icon { transform: scale(0.9); }
+    .nav-dot {
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--sky); margin: 0 auto;
+      opacity: 0; transition: opacity .2s;
+    }
+    .nav-item.active .nav-dot { opacity: 1; }
+
+    /* ─────────────────────────────────────────────
+       MISC
+    ───────────────────────────────────────────── */
+    .divider { height: 1px; background: var(--glass-border); margin: 4px 0; }
+    .text-muted { color: var(--muted); font-size: 13px; }
+    .mt-12 { margin-top: 12px; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .pill { background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.25); border-radius: 20px; padding: 4px 12px; font-size: 12px; color: var(--sky); }
+
+    /* Notification toast */
+    #toast {
+      position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: rgba(30,41,59,0.95); border: 1px solid var(--glass-border);
+      border-radius: 14px; padding: 12px 20px;
+      font-size: 14px; font-weight: 500;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      z-index: 200; opacity: 0;
+      transition: opacity .25s, transform .25s;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Login screen ── */
+    #screen-login {
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+      min-height: 100dvh; padding-bottom: 0;
+    }
+    .login-top {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 60px 24px 32px;
+      text-align: center;
+    }
+    .login-logo {
+      width: 80px; height: 80px; border-radius: 24px;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--sky) 100%);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 36px;
+      box-shadow: 0 12px 40px rgba(37,99,235,0.55);
+    }
+    .login-top h1 {
+      font-size: 34px; font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, var(--sky) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .login-top p { font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .login-sheet {
+      background: rgba(15,23,42,0.85);
+      border-top: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border-radius: 28px 28px 0 0;
+      padding: 28px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+    }
+    .login-sheet h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .login-sheet .sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
+    .social-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 14px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      color: var(--text); font-family: 'Inter', sans-serif;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: all .2s; margin-bottom: 10px;
+    }
+    .social-btn:active { background: rgba(255,255,255,0.14); transform: scale(0.98); }
+    .or-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 14px 0; color: var(--muted); font-size: 12px;
+    }
+    .or-divider::before, .or-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--glass-border);
+    }
+    .forgot { text-align: right; font-size: 12px; color: var(--sky); margin-top: -8px; margin-bottom: 16px; cursor: pointer; }
+    .login-footer { text-align: center; font-size: 13px; color: var(--muted); margin-top: 16px; }
+    .login-footer span { color: var(--sky); font-weight: 600; cursor: pointer; }
+
+    /* Generate button glow */
+    .btn-generate {
+      background: linear-gradient(135deg, #7C3AED 0%, #2563EB 50%, var(--sky) 100%);
+      color: #fff;
+      box-shadow: 0 4px 28px rgba(124,58,237,0.5);
+      animation: glow-pulse 2.5s ease-in-out infinite;
+    }
+    @keyframes glow-pulse {
+      0%,100% { box-shadow: 0 4px 28px rgba(124,58,237,0.5); }
+      50%      { box-shadow: 0 6px 40px rgba(37,99,235,0.7); }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════════════════════
+       SCREEN LOGIN
+  ══════════════════════════════════════ -->
+  <div id="screen-login" class="screen active">
+    <div class="login-top">
+      <div class="login-logo">💡</div>
+      <h1>Grant AI</h1>
+      <p>Smart grant discovery<br>powered by artificial intelligence</p>
+    </div>
+    <div class="login-sheet">
+      <h2>Welcome back</h2>
+      <div class="sub">Sign in to your account</div>
+
+      <button class="social-btn" onclick="signInSocial('Google')">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.3 0 24 0 14.7 0 6.7 5.6 2.9 13.7l7.8 6C12.5 13.5 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 6.9-10 6.9-17z"/><path fill="#FBBC05" d="M10.7 28.3A14.5 14.5 0 0 1 9.5 24c0-1.5.3-2.9.7-4.3l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.9 10.7l7.8-6.4z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.2 1.5-5 2.3-8.4 2.3-6.2 0-11.5-4.2-13.3-9.9l-7.8 6C6.7 42.4 14.7 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <button class="social-btn" onclick="signInSocial('LinkedIn')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#0A66C2"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.13 1.44-2.13 2.94v5.67H9.37V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.59 0 4.26 2.37 4.26 5.44v6.3zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zm1.78 13.02H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></svg>
+        Continue with LinkedIn
+      </button>
+
+      <div class="or-divider">or sign in with email</div>
+
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@organisation.org" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" />
+      </div>
+      <div class="forgot" onclick="showToast('📧 Reset link sent to your email')">Forgot password?</div>
+      <button class="btn btn-primary" onclick="doLogin()">Sign In →</button>
+      <div class="login-footer">Don't have an account? <span onclick="doRegister()">Sign up free</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 0 · HOME
+  ══════════════════════════════════════ -->
+  <div id="screen-home" class="screen">
+    <div class="home-hero">
+      <div class="logo-wrap">💡</div>
+      <h1>Grant AI</h1>
+      <p>Smart grant discovery powered<br>by artificial intelligence</p>
+    </div>
+    <div class="home-stats">
+      <div class="stat-card"><div class="num">25+</div><div class="lbl">Databases</div></div>
+      <div class="stat-card"><div class="num">4.2K</div><div class="lbl">Grants</div></div>
+      <div class="stat-card"><div class="num">87%</div><div class="lbl">Success Rate</div></div>
+    </div>
+    <div class="home-menu">
+      <div class="menu-card featured" onclick="goTo('brief')">
+        <div class="icon">🚀</div>
+        <div class="text">
+          <div class="title">Start New Project</div>
+          <div class="desc">Fill in your project brief and find matching grants instantly</div>
+        </div>
+      </div>
+      <div class="menu-card" onclick="goTo('results')">
+        <div class="icon">🔎</div>
+        <div class="title">Find Grants</div>
+        <div class="desc">Browse all available grant opportunities</div>
+      </div>
+      <div class="menu-card" onclick="goTo('projects')">
+        <div class="icon">📂</div>
+        <div class="title">My Projects</div>
+        <div class="desc">Track saved projects and applications</div>
+      </div>
+      <div class="menu-card" onclick="goTo('donors')">
+        <div class="icon">🏛️</div>
+        <div class="title">Donor Database</div>
+        <div class="desc">Explore funding organisations worldwide</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 1 · BRIEF
+  ══════════════════════════════════════ -->
+  <div id="screen-brief" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="goBack()">‹</button>
+      <h2>Project Brief</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="padding:0 16px 20px">
+      <div class="card" style="background:linear-gradient(135deg,rgba(37,99,235,0.2),rgba(56,189,248,0.1));border-color:rgba(37,99,235,0.35)">
+        <div style="font-size:13px;color:var(--sky);font-weight:600;margin-bottom:4px;">✨ AI-Powered Matching</div>
+        <div style="font-size:12px;color:var(--muted)">Fill in your project details and our AI will scan 25+ grant databases to find the best matches for you.</div>
+      </div>
+
+      <div class="field">
+        <label>Project Name</label>
+        <input type="text" id="proj-name" placeholder="e.g. Urban Green Spaces Initiative" />
+      </div>
+      <div class="field">
+        <label>Country / Region</label>
+        <select id="proj-region">
+          <option value="">Select region…</option>
+          <option>Eastern Europe</option>
+          <option>Western Europe</option>
+          <option>Central Asia</option>
+          <option>Sub-Saharan Africa</option>
+          <option>Latin America</option>
+          <option>Middle East & North Africa</option>
+          <option>South Asia</option>
+          <option>Global</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Problem Description</label>
+        <textarea id="proj-problem" placeholder="Describe the social or environmental problem your project addresses…"></textarea>
+      </div>
+      <div class="field">
+        <label>Target Audience</label>
+        <input type="text" id="proj-audience" placeholder="e.g. Youth, Women, Rural communities" />
+      </div>
+      <div class="field">
+        <label>Estimated Budget (USD)</label>
+        <input type="text" id="proj-budget" placeholder="e.g. $50,000 – $200,000" />
+      </div>
+      <div class="field">
+        <label>Team Size</label>
+        <select id="proj-team">
+          <option value="">Select team size…</option>
+          <option>1 – 3 people</option>
+          <option>4 – 10 people</option>
+          <option>11 – 30 people</option>
+          <option>30+ people</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" style="margin-top:8px" onclick="startSearch()">
+        🔍 &nbsp;Search Grants
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 2 · LOADING
+  ══════════════════════════════════════ -->
+  <div id="screen-loading" class="screen">
+    <div class="loader-ring"></div>
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="font-size:20px;font-weight:800;margin-bottom:6px">Scanning Databases…</div>
+      <div style="font-size:13px;color:var(--muted)">AI is analysing 25+ grant databases</div>
+    </div>
+    <div class="loader-steps" id="loader-steps">
+      <div class="loader-step" id="step-0"><div class="step-dot"></div>Connecting to Horizon Europe…</div>
+      <div class="loader-step" id="step-1"><div class="step-dot"></div>Scanning UNDP grant catalogue…</div>
+      <div class="loader-step" id="step-2"><div class="step-dot"></div>Checking USAID & World Bank…</div>
+      <div class="loader-step" id="step-3"><div class="step-dot"></div>Analysing Rockefeller & NED…</div>
+      <div class="loader-step" id="step-4"><div class="step-dot"></div>Running AI matching algorithm…</div>
+      <div class="loader-step" id="step-5"><div class="step-dot"></div>Calculating success probabilities…</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 3 · RESULTS
+  ══════════════════════════════════════ -->
+  <div id="screen-results" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="goBack()">‹</button>
+      <h2>Grant Results</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="padding:0 16px 16px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;color:var(--muted)">5 matches found</div>
+      <div class="badge badge-green">✓ AI Verified</div>
+    </div>
+
+    <!-- Grant cards generated by JS -->
+    <div id="grant-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 4 · DONORS
+  ══════════════════════════════════════ -->
+  <div id="screen-donors" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="goBack()">‹</button>
+      <h2>Donor Database</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="search-wrap">
+      <span class="search-icon">🔎</span>
+      <input type="search" id="donor-search" placeholder="Search donors…" oninput="filterDonors(this.value)" />
+    </div>
+    <div id="donor-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 5 · MY PROJECTS
+  ══════════════════════════════════════ -->
+  <div id="screen-projects" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="goBack()">‹</button>
+      <h2>My Projects</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div id="projects-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 6 · GRANT DETAIL
+  ══════════════════════════════════════ -->
+  <div id="screen-detail" class="screen">
+    <div style="position:sticky;top:0;z-index:10;padding-top:52px;padding-left:16px;padding-right:16px;padding-bottom:10px;background:rgba(15,23,42,0.85);backdrop-filter:blur(12px)">
+      <button class="back-btn" onclick="goBack()">‹</button>
+    </div>
+    <div id="detail-content"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       BOTTOM NAV
+  ══════════════════════════════════════ -->
+  <nav id="bottom-nav">
+    <div class="nav-item active" id="nav-home" onclick="goNav('home')">
+      <span class="nav-icon">🏠</span>
+      <span>Home</span>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-results" onclick="goNav('results')">
+      <span class="nav-icon">🔍</span>
+      <span>Grants</span>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-projects" onclick="goNav('projects')">
+      <span class="nav-icon">📂</span>
+      <span>Projects</span>
+      <div class="nav-dot"></div>
+    </div>
+    <div class="nav-item" id="nav-donors" onclick="goNav('donors')">
+      <span class="nav-icon">🏛️</span>
+      <span>Donors</span>
+      <div class="nav-dot"></div>
+    </div>
+  </nav>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════
+   DATA
+═══════════════════════════════════════════ */
+const GRANTS = [
+  {
+    id: 1,
+    name: "Horizon Europe Innovation Fund",
+    org: "European Commission",
+    icon: "🇪🇺",
+    amount: "€2,000,000",
+    coverage: 90,
+    probability: 68,
+    deadline: "Oct 2026",
+    type: "Research & Innovation",
+    status: "Open",
+    focus: ["Technology", "Climate", "Society"],
+    description: "Horizon Europe is the EU's key funding programme for research and innovation. It tackles climate change, helps to achieve the UN's Sustainable Development Goals and boosts EU competitiveness and growth.",
+    requirements: [
+      "Registered legal entity in EU or associated country",
+      "Minimum 3 partners from different countries",
+      "Clear innovation and impact plan",
+      "Budget justification with cost breakdown"
+    ]
+  },
+  {
+    id: 2,
+    name: "UNDP Social Impact Grant",
+    org: "United Nations Development Programme",
+    icon: "🌍",
+    amount: "$500,000",
+    coverage: 80,
+    probability: 74,
+    deadline: "Mar 2026",
+    type: "Social Development",
+    status: "Open",
+    focus: ["Poverty", "Equality", "Governance"],
+    description: "UNDP supports countries to accelerate structural transformations for sustainable development. The Social Impact Grant focuses on reducing inequalities and empowering marginalised communities.",
+    requirements: [
+      "Local NGO or civil society organisation",
+      "Evidence of community engagement",
+      "Measurable impact indicators",
+      "Previous project reporting capacity"
+    ]
+  },
+  {
+    id: 3,
+    name: "USAID Development Grant",
+    org: "U.S. Agency for International Development",
+    icon: "🦅",
+    amount: "$750,000",
+    coverage: 85,
+    probability: 55,
+    deadline: "Jun 2026",
+    type: "International Development",
+    status: "Open",
+    focus: ["Democracy", "Health", "Economic Growth"],
+    description: "USAID advances U.S. national security and economic prosperity, demonstrates American generosity, and promotes a path to recipient self-reliance and resilience.",
+    requirements: [
+      "Non-profit or NGO registration",
+      "Alignment with USAID country strategy",
+      "Financial management capacity",
+      "Gender and social inclusion plan"
+    ]
+  },
+  {
+    id: 4,
+    name: "Rockefeller Climate Fund",
+    org: "Rockefeller Foundation",
+    icon: "🌱",
+    amount: "$1,200,000",
+    coverage: 75,
+    probability: 61,
+    deadline: "Aug 2026",
+    type: "Climate & Environment",
+    status: "Open",
+    focus: ["Climate", "Resilience", "Energy"],
+    description: "The Rockefeller Foundation promotes the well-being of humanity throughout the world. The Climate Fund supports transformative solutions to address the climate crisis while advancing equitable access to clean energy.",
+    requirements: [
+      "Demonstrated climate impact potential",
+      "Partnership with local stakeholders",
+      "Sustainability plan beyond grant period",
+      "Equity and inclusion lens"
+    ]
+  },
+  {
+    id: 5,
+    name: "World Bank Innovation Challenge",
+    org: "World Bank Group",
+    icon: "🏦",
+    amount: "$300,000",
+    coverage: 70,
+    probability: 79,
+    deadline: "Apr 2026",
+    type: "Innovation & Technology",
+    status: "Open",
+    focus: ["Development", "Innovation", "Digital"],
+    description: "The World Bank Innovation Challenge supports cutting-edge projects that use technology and innovation to address development challenges in emerging markets and developing economies.",
+    requirements: [
+      "Innovative solution with scalability potential",
+      "Operating in World Bank member country",
+      "Technology or digital component",
+      "Theory of change documented"
+    ]
+  }
+];
+
+const DONORS = [
+  { name: "UNDP",                icon: "🌍", color: "#1d4ed8", type: "UN Agency",            grants: "340+",  focus: "Social Development" },
+  { name: "World Bank",          icon: "🏦", color: "#0369a1", type: "Multilateral Bank",    grants: "520+",  focus: "Economic Development" },
+  { name: "USAID",               icon: "🦅", color: "#b45309", type: "Bilateral Agency",     grants: "280+",  focus: "International Development" },
+  { name: "Rockefeller Found.",  icon: "🌱", color: "#065f46", type: "Private Foundation",   grants: "120+",  focus: "Climate & Health" },
+  { name: "NED",                 icon: "🗽", color: "#7c3aed", type: "Democracy Fund",        grants: "190+",  focus: "Democracy & Human Rights" },
+  { name: "EBRD",                icon: "🏛️", color: "#1e3a5f", type: "Development Bank",     grants: "150+",  focus: "Economic Transition" },
+  { name: "Open Society Found.", icon: "⚖️", color: "#9d174d", type: "Private Foundation",   grants: "95+",   focus: "Civil Society" },
+  { name: "GIZ",                 icon: "🇩🇪", color: "#374151", type: "German Dev. Agency",  grants: "200+",  focus: "Technical Cooperation" },
+  { name: "EU Horizon",          icon: "🇪🇺", color: "#1e40af", type: "EU Programme",         grants: "600+",  focus: "Research & Innovation" },
+  { name: "UNICEF",              icon: "💙", color: "#0284c7", type: "UN Agency",            grants: "210+",  focus: "Children & Youth" }
+];
+
+let SAVED_PROJECTS = [
+  { name: "Clean Water Access",      region: "Sub-Saharan Africa", grants: 4, progress: 65, status: "In Progress" },
+  { name: "Youth Coding Academy",    region: "Eastern Europe",     grants: 7, progress: 30, status: "Research" },
+  { name: "Women Entrepreneurship",  region: "Central Asia",       grants: 3, progress: 80, status: "Applying" }
+];
+
+/* ═══════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════ */
+let history = ['login'];
+let currentScreen = 'login';
+
+function goTo(id, addHistory = true) {
+  const prev = document.getElementById('screen-' + currentScreen);
+  const next = document.getElementById('screen-' + id);
+  if (!next) return;
+
+  prev.classList.remove('active');
+  prev.classList.add('exit-left');
+  setTimeout(() => prev.classList.remove('exit-left'), 350);
+
+  next.classList.add('active');
+  currentScreen = id;
+
+  if (addHistory) history.push(id);
+
+  // Show/hide bottom nav
+  document.getElementById('bottom-nav').style.display = (id === 'login') ? 'none' : 'flex';
+
+  // Update bottom nav
+  const navMap = { login:null, home:'home', brief:null, loading:null, results:'results', donors:'donors', projects:'projects', detail:null };
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navKey = navMap[id];
+  if (navKey) {
+    const el = document.getElementById('nav-' + navKey);
+    if (el) el.classList.add('active');
+  }
+
+  // Scroll to top
+  next.scrollTop = 0;
+
+  // Hooks
+  if (id === 'donors')   renderDonors();
+  if (id === 'projects') renderProjects();
+  if (id === 'results')  renderGrants();
+}
+
+function goBack() {
+  if (history.length <= 1) { goTo('home', false); history = ['home']; return; }
+  history.pop();
+  const prev = history[history.length - 1];
+  const curr = document.getElementById('screen-' + currentScreen);
+  const target = document.getElementById('screen-' + prev);
+  curr.classList.remove('active');
+  target.classList.add('active');
+  currentScreen = prev;
+  if (prev === 'results') renderGrants();
+  if (prev === 'projects') renderProjects();
+}
+
+function goNav(id) {
+  history = [id];
+  goTo(id, false);
+}
+
+/* ═══════════════════════════════════════════
+   LOADING SIMULATION
+═══════════════════════════════════════════ */
+function startSearch() {
+  goTo('loading');
+  const steps = document.querySelectorAll('.loader-step');
+  steps.forEach(s => { s.classList.remove('done','active'); });
+  let i = 0;
+  function tick() {
+    if (i > 0) { steps[i-1].classList.remove('active'); steps[i-1].classList.add('done'); }
+    if (i < steps.length) {
+      steps[i].classList.add('active');
+      i++;
+      setTimeout(tick, 380 + Math.random() * 200);
+    } else {
+      setTimeout(() => { goTo('results'); }, 500);
+    }
+  }
+  tick();
+}
+
+/* ═══════════════════════════════════════════
+   RENDER GRANTS
+═══════════════════════════════════════════ */
+function probBadge(p) {
+  if (p >= 70) return `<span class="badge badge-green">${p}% probability</span>`;
+  if (p >= 50) return `<span class="badge badge-warn">${p}% probability</span>`;
+  return `<span class="badge badge-red">${p}% probability</span>`;
+}
+function coverBar(c) {
+  const cls = c >= 80 ? 'bar-blue' : c >= 60 ? 'bar-green' : 'bar-warn';
+  return `<div class="progress-wrap"><div class="progress-bar ${cls}" style="width:${c}%"></div></div>`;
+}
+
+function renderGrants() {
+  const list = document.getElementById('grant-list');
+  list.innerHTML = GRANTS.map(g => `
+    <div class="card grant-card" onclick="openDetail(${g.id})">
+      <div class="grant-header">
+        <div>
+          <div class="grant-title">${g.icon} ${g.name}</div>
+          <div class="grant-org">${g.org}</div>
+        </div>
+        <div class="grant-amount">${g.amount}</div>
+      </div>
+      <div class="grant-row">
+        <span class="grant-label">Coverage</span>
+        <span style="font-weight:600">${g.coverage}%</span>
+      </div>
+      ${coverBar(g.coverage)}
+      <div class="grant-row" style="margin-top:10px">
+        <span class="grant-label">Deadline</span>
+        <span style="font-weight:600">${g.deadline}</span>
+      </div>
+      <div class="grant-row">
+        <span class="grant-label">AI Match</span>
+        ${probBadge(g.probability)}
+      </div>
+      <div class="grant-actions">
+        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();applyGrant(${g.id})">Apply Now</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();saveGrant(${g.id})">💾 Save</button>
+        <button class="btn btn-sky btn-sm" onclick="event.stopPropagation();generateApp(${g.id})">✨ Generate App</button>
+      </div>
+    </div>
+  `).join('');
+  // Animate bars in
+  setTimeout(() => {
+    document.querySelectorAll('.progress-bar').forEach(b => { b.style.width = b.style.width; });
+  }, 50);
+}
+
+/* ═══════════════════════════════════════════
+   GRANT DETAIL
+═══════════════════════════════════════════ */
+function openDetail(id) {
+  const g = GRANTS.find(x => x.id === id);
+  if (!g) return;
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-cover">
+      <span class="detail-tag" style="font-size:36px">${g.icon}</span>
+      <div class="detail-title-wrap">
+        <h2>${g.name}</h2>
+        <p>${g.org}</p>
+      </div>
+    </div>
+    <div class="detail-section">
+      <h3>Overview</h3>
+      <p style="font-size:14px;color:var(--muted);line-height:1.6">${g.description}</p>
+    </div>
+    <div class="detail-section">
+      <h3>Key Figures</h3>
+      <div class="card" style="margin:0 0 0;padding:14px 16px">
+        <div class="info-row"><span class="lbl">Funding Amount</span><span class="val" style="color:var(--sky)">${g.amount}</span></div>
+        <div class="info-row"><span class="lbl">Coverage</span><span class="val">${g.coverage}%</span></div>
+        <div class="info-row"><span class="lbl">AI Success Probability</span><span class="val">${probBadge(g.probability)}</span></div>
+        <div class="info-row"><span class="lbl">Application Deadline</span><span class="val">${g.deadline}</span></div>
+        <div class="info-row"><span class="lbl">Grant Type</span><span class="val">${g.type}</span></div>
+        <div class="info-row"><span class="lbl">Status</span><span class="val"><span class="badge badge-green">● Open</span></span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <h3>Focus Areas</h3>
+      <div class="pill-row">${g.focus.map(f => `<span class="pill">${f}</span>`).join('')}</div>
+    </div>
+    <div class="detail-section">
+      <h3>Requirements</h3>
+      ${g.requirements.map(r => `<div class="requirement-item"><div class="req-dot"></div><span>${r}</span></div>`).join('')}
+    </div>
+    <div style="padding:20px 16px 16px;display:grid;gap:10px">
+      <button class="btn btn-generate" onclick="generateApp(${g.id})">✨ &nbsp;Generate Application</button>
+      <button class="btn btn-primary" onclick="applyGrant(${g.id})">Apply Now →</button>
+      <button class="btn btn-ghost" onclick="saveGrant(${g.id})">💾 &nbsp;Save to Projects</button>
+    </div>
+  `;
+  goTo('detail');
+}
+
+/* ═══════════════════════════════════════════
+   RENDER DONORS
+═══════════════════════════════════════════ */
+function renderDonors(filter = '') {
+  const list = document.getElementById('donor-list');
+  const filtered = DONORS.filter(d => d.name.toLowerCase().includes(filter.toLowerCase()) || d.focus.toLowerCase().includes(filter.toLowerCase()));
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state"><div class="emoji">🔎</div><h3>No donors found</h3><p>Try a different search term.</p></div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(d => `
+    <div class="card donor-card" onclick="showToast('Opening ${d.name} profile…')">
+      <div class="donor-logo" style="background:${d.color}22;border:1px solid ${d.color}44">${d.icon}</div>
+      <div class="donor-info">
+        <div class="donor-name">${d.name}</div>
+        <div class="donor-type">${d.type}</div>
+        <div class="donor-grant">${d.grants} grants · ${d.focus}</div>
+      </div>
+      <div class="donor-arrow">›</div>
+    </div>
+  `).join('');
+}
+function filterDonors(v) { renderDonors(v); }
+
+/* ═══════════════════════════════════════════
+   RENDER PROJECTS
+═══════════════════════════════════════════ */
+function renderProjects() {
+  const list = document.getElementById('projects-list');
+  if (!SAVED_PROJECTS.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="emoji">📂</div>
+        <h3>No projects yet</h3>
+        <p>Start your first project and let AI find the best grants for you.</p>
+        <button class="btn btn-primary" style="max-width:200px;margin:20px auto 0" onclick="goTo('brief')">+ New Project</button>
+      </div>`;
+    return;
+  }
+  const statusColor = { 'In Progress': 'badge-blue', 'Research': 'badge-warn', 'Applying': 'badge-green' };
+  list.innerHTML = `<div style="padding:0 16px 8px;display:flex;align-items:center;justify-content:space-between">
+      <span class="text-muted">${SAVED_PROJECTS.length} projects</span>
+      <button class="btn btn-primary btn-sm" onclick="goTo('brief')">+ New</button>
+    </div>` +
+    SAVED_PROJECTS.map((p,i) => `
+      <div class="card project-card" onclick="showToast('Opening ${p.name}…')">
+        <div class="project-header">
+          <div>
+            <div class="project-name">${p.name}</div>
+            <div class="project-region">📍 ${p.region}</div>
+          </div>
+          <span class="badge ${statusColor[p.status]}">${p.status}</span>
+        </div>
+        <div class="grant-row">
+          <span class="grant-label">Matching grants</span>
+          <span style="font-weight:700;color:var(--sky)">${p.grants}</span>
+        </div>
+        <div class="project-progress">
+          <div class="proj-label"><span>Application progress</span><span>${p.progress}%</span></div>
+          <div class="progress-wrap"><div class="progress-bar bar-blue" style="width:${p.progress}%"></div></div>
+        </div>
+      </div>
+    `).join('');
+}
+
+/* ═══════════════════════════════════════════
+   ACTIONS
+═══════════════════════════════════════════ */
+function applyGrant(id) {
+  const g = GRANTS.find(x => x.id === id);
+  showToast(`🚀 Redirecting to ${g.name} application…`);
+}
+function saveGrant(id) {
+  const g = GRANTS.find(x => x.id === id);
+  showToast(`💾 "${g.name}" saved to My Projects`);
+  const projName = document.getElementById('proj-name') ? document.getElementById('proj-name').value : 'New Project';
+  SAVED_PROJECTS.unshift({ name: projName || 'Unnamed Project', region: 'Global', grants: 1, progress: 10, status: 'Research' });
+}
+function generateApp(id) {
+  const g = GRANTS.find(x => x.id === id);
+  showToast(`✨ Generating application for ${g.name}…`);
+  setTimeout(() => showToast('📝 Application draft ready! Check your email.'), 2500);
+}
+
+/* ═══════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════ */
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+/* ═══════════════════════════════════════════
+   LOGIN
+═══════════════════════════════════════════ */
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-password').value;
+  if (!email || !pass) { showToast('⚠️ Please enter email and password'); return; }
+  showToast('✅ Signing in…');
+  setTimeout(() => goTo('home'), 1000);
+}
+function doRegister() {
+  showToast('✨ Registration coming soon!');
+}
+function signInSocial(provider) {
+  showToast(`🔐 Connecting to ${provider}…`);
+  setTimeout(() => goTo('home'), 1200);
+}
+
+/* ═══════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════ */
+document.getElementById('bottom-nav').style.display = 'none';
+renderGrants();
+renderDonors();
+renderProjects();
+</script>
+</body>
+</html>
