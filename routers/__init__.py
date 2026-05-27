@@ -7,6 +7,7 @@ from .transcription_router import (
     EntityRouter,
     build_chain,
 )
+from .indexer import update_index, update_module_readme
 
 __all__ = [
     "BaseRouter",
@@ -17,4 +18,6 @@ __all__ = [
     "IntentRouter",
     "EntityRouter",
     "build_chain",
+    "update_index",
+    "update_module_readme",
 ]

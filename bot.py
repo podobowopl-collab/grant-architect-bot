@@ -18,6 +18,7 @@ from telegram.ext import (
 )
 
 from routers import build_chain, RouterResult
+from routers.indexer import update_index, update_module_readme
 
 # ---------------------------------------------------------------------------
 # Config
@@ -300,12 +301,31 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
     if ok:
         size_kb = len(file_bytes) / 1024
         logger.info("Uploaded to GitHub: %s", gh_path)
+
+        # --- Определяем тему и сущности через роутер ---
+        routing = _CHAIN.run(fname.rsplit(".", 1)[0].replace("_", " ").replace("-", " "))
+        topic    = routing.get("topic", state.get("mode", "upload").replace("save_", ""))
+        entities = routing.get("entities", {})
+
+        # --- Обновляем INDEX.md и README модуля ---
+        await status_msg.edit_text("⏳ Обновляю INDEX и README...", parse_mode="Markdown")
+        try:
+            update_index(gh_path, topic, folder, GH_BASE, gh_headers())
+            update_module_readme(gh_path, fname, folder, topic, entities, GH_BASE, gh_headers())
+            index_ok = True
+        except Exception as exc:
+            logger.warning("Indexer error: %s", exc)
+            index_ok = False
+
+        index_note = "📋 INDEX.md и README обновлены" if index_ok else "⚠ Индекс не обновлён"
+
         await status_msg.edit_text(
             f"✅ *Загружено в GitHub!*\n\n"
             f"📄 Файл: `{fname}`\n"
             f"📂 Путь: `{gh_path}`\n"
-            f"📦 Размер: {size_kb:.1f} KB\n\n"
-            f"✦ Uploaded to GitHub: {gh_path}",
+            f"📦 Размер: {size_kb:.1f} KB\n"
+            f"🏷 Тема: `{topic}`\n\n"
+            f"{index_note}",
             parse_mode="Markdown",
         )
         user_state.pop(uid, None)
