@@ -17,6 +17,8 @@ from telegram.ext import (
     filters,
 )
 
+from routers import build_chain, RouterResult
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -351,6 +353,135 @@ async def search_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Transcription router helpers
+# ---------------------------------------------------------------------------
+_CHAIN = build_chain()
+
+_ACTION_FOLDER_MAP: dict[str, str] = {
+    "save_grant":     "grants",
+    "save_project":   "projects",
+    "save_knowledge": "knowledge",
+    "save_upload":    "uploads",
+}
+
+_ACTION_LABELS: dict[str, str] = {
+    "save_grant":     "📁 grants/",
+    "save_project":   "📁 projects/",
+    "save_knowledge": "📁 knowledge/",
+    "save_upload":    "📁 uploads/",
+    "search":         "🔍 поиск",
+    "ask":            "💬 вопрос",
+    "report":         "📊 отчёт",
+    "unknown":        "❓ не определено",
+}
+
+
+def _format_routing_result(result: RouterResult) -> str:
+    """Форматирует результат маршрутизации для отображения пользователю."""
+    lang   = result.get("lang", "?")
+    topic  = result.get("topic", "?")
+    intent = result.get("intent", "?")
+    action = result.action
+    entities = result.get("entities", {})
+
+    lines = [
+        "🔀 *Анализ транскрибации:*",
+        f"  🌐 Язык: `{lang}`",
+        f"  🏷 Тема: `{topic}`",
+        f"  🎯 Намерение: `{intent}`",
+        f"  ✅ Действие: `{_ACTION_LABELS.get(action, action)}`",
+        f"  📊 Уверенность: {result.confidence:.0%}",
+    ]
+
+    if entities.get("amounts"):
+        lines.append(f"  💰 Суммы: {', '.join(entities['amounts'][:3])}")
+    if entities.get("dates"):
+        lines.append(f"  📅 Даты: {', '.join(entities['dates'][:3])}")
+    if entities.get("organizations"):
+        lines.append(f"  🏢 Организации: {', '.join(entities['organizations'][:3])}")
+
+    return "\n".join(lines)
+
+
+async def _execute_routing_action(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    result: RouterResult,
+) -> None:
+    """Выполняет действие, определённое цепочкой роутеров."""
+    uid = update.effective_user.id
+    action = result.action
+
+    if action.startswith("save_"):
+        folder = _ACTION_FOLDER_MAP.get(action, "uploads")
+        user_state[uid] = {"mode": action, "folder": folder, "ready": True}
+        await update.message.reply_text(
+            f"{_format_routing_result(result)}\n\n"
+            f"📤 Готов принять файл — сохраню в *{folder}/*\n"
+            "Пришли PDF, DOCX, TXT или MD.",
+            parse_mode="Markdown",
+        )
+
+    elif action == "search":
+        intent_text = result.text
+        keyword = intent_text[:50].strip()
+        await update.message.reply_text(
+            f"{_format_routing_result(result)}\n\n"
+            f"🔍 Ищу файлы по: `{keyword}`...",
+            parse_mode="Markdown",
+        )
+        all_files = gh_list_files()
+        words = [w for w in keyword.lower().split() if len(w) > 3]
+        matches = [
+            f for f in all_files
+            if any(w in f["name"].lower() or w in f["path"].lower() for w in words)
+        ]
+        if matches:
+            lines = [f"✅ Найдено {len(matches)} файл(ов):"]
+            for f in matches[:10]:
+                lines.append(f"📄 `{f['path']}` ({f['size'] / 1024:.1f} KB)")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        else:
+            await update.message.reply_text(
+                "❌ Файлы не найдены. Уточни запрос.", parse_mode="Markdown"
+            )
+
+    elif action in ("ask", "report"):
+        await update.message.reply_text(
+            f"{_format_routing_result(result)}\n\n"
+            "💬 Вопросы к AI пока в разработке. "
+            "Используй /search для поиска или /grant для загрузки файлов.",
+            parse_mode="Markdown",
+        )
+
+    else:
+        await update.message.reply_text(
+            f"{_format_routing_result(result)}\n\n"
+            "❓ Не понял намерение. Используй:\n"
+            "/grant /project /knowledge /upload /search",
+            parse_mode="Markdown",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Text message handler (runs transcription router on plain text)
+# ---------------------------------------------------------------------------
+async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    # Если пользователь в режиме загрузки файла — не перехватываем
+    if user_state.get(uid, {}).get("ready"):
+        return
+
+    text = update.message.text or ""
+    if not text or text.startswith("/"):
+        return
+
+    result = _CHAIN.run(text)
+    logger.info("Routing [%s]: action=%s confidence=%.2f", uid, result.action, result.confidence)
+    await _execute_routing_action(update, ctx, result)
+
+
+# ---------------------------------------------------------------------------
 # aiohttp web server  (/api/files, /health)
 # ---------------------------------------------------------------------------
 async def api_files(request: web.Request) -> web.Response:
@@ -376,6 +507,27 @@ async def api_health(request: web.Request) -> web.Response:
     })
 
 
+async def api_route(request: web.Request) -> web.Response:
+    """POST /api/route  body: {"text": "..."} → routing result JSON."""
+    try:
+        body = await request.json()
+        text = body.get("text", "")
+        if not text:
+            return web.json_response({"ok": False, "error": "text is required"}, status=400)
+        result = _CHAIN.run(text)
+        return web.json_response({
+            "ok": True,
+            "text": result.text,
+            "action": result.action,
+            "confidence": round(result.confidence, 3),
+            "labels": result.labels,
+            "matched_routers": result.matched_routers,
+        })
+    except Exception as exc:
+        logger.exception("api_route error")
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -398,12 +550,14 @@ async def main() -> None:
     tg_app.add_handler(CommandHandler("search",    search_cmd))
     tg_app.add_handler(CallbackQueryHandler(subfolder_callback, pattern=r"^sf_"))
     tg_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     # 3. Build aiohttp web app
     web_app = web.Application()
-    web_app.router.add_get("/",          api_health)
+    web_app.router.add_get("/",           api_health)
     web_app.router.add_get("/health",    api_health)
     web_app.router.add_get("/api/files", api_files)
+    web_app.router.add_post("/api/route", api_route)
 
     # 4. Run Telegram polling + HTTP server concurrently
     async with tg_app:
