@@ -14,5 +14,7 @@ services:
         sync: false
       - key: GITHUB_REPO
         sync: false
+      - key: MINI_APP_URL
+        sync: false
       - key: PYTHON_VERSION
         value: 3.11.9

@@ -3,11 +3,12 @@ import base64
 import json
 import logging
 import os
+import pathlib
 import signal
 
 import requests
 from aiohttp import web
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -39,6 +40,9 @@ if not GH_TOKEN:
     raise ValueError("GITHUB_TOKEN is not set")
 
 GH_BASE = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents"
+
+# URL where the Mini App is served (set in Render env vars after first deploy)
+MINI_APP_URL = os.environ.get("MINI_APP_URL", "")
 
 # ---------------------------------------------------------------------------
 # Folder structure
@@ -145,20 +149,26 @@ def ensure_folder_structure() -> None:
 # File upload handlers
 # ---------------------------------------------------------------------------
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    buttons: list[list] = []
+    if MINI_APP_URL:
+        buttons.append([
+            InlineKeyboardButton(
+                "🚀 Открыть Grant Architect",
+                web_app=WebAppInfo(url=MINI_APP_URL),
+            )
+        ])
+    buttons.append([InlineKeyboardButton("📋 Wizard заявки (в чате)", callback_data="start_apply")])
+
     await update.message.reply_text(
         "✦ *Grant Architect Bot*\n\n"
         "Помогаю собрать заявку на грант и хранить файлы курса.\n\n"
         "📋 *Заявка на грант:*\n"
         "/apply — пройти wizard и получить черновик заявки\n\n"
         "📁 *Загрузка файлов:*\n"
-        "/grant — сохранить в /grants\n"
-        "/project — сохранить в /projects\n"
-        "/knowledge — сохранить в /knowledge\n"
-        "/upload — сохранить в /uploads\n\n"
-        "🔍 *Поиск:*\n"
-        "/search слово — поиск файлов по имени\n\n"
-        "Форматы: PDF, DOCX, TXT, MD",
+        "/grant /project /knowledge /upload\n\n"
+        "🔍 /search слово — поиск файлов",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons) if buttons else None,
     )
 
 
@@ -539,6 +549,95 @@ async def api_health(request: web.Request) -> web.Response:
     })
 
 
+async def serve_miniapp(request: web.Request) -> web.Response:
+    html_path = pathlib.Path(__file__).parent / "index.html"
+    if not html_path.exists():
+        return web.Response(status=404, text="Mini App not found")
+    return web.Response(
+        body=html_path.read_bytes(),
+        content_type="text/html",
+        charset="utf-8",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mini App data handler (receives form data sent by Telegram.WebApp.sendData)
+# ---------------------------------------------------------------------------
+async def handle_web_app_data(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    raw = update.message.web_app_data.data
+    try:
+        data = json.loads(raw)
+    except Exception:
+        await update.message.reply_text("❌ Ошибка обработки данных из Mini App.")
+        return
+
+    project_name = data.get("name") or "Проект"
+    grant_name   = data.get("grant_name", "")
+    grant_type   = data.get("grant_type", "eu")
+    region       = data.get("region", "")
+    problem      = data.get("problem", "")
+    audience     = data.get("audience", "")
+    budget       = data.get("budget", "")
+    team         = data.get("team", "")
+
+    draft = (
+        f"# Черновик заявки на грант\n\n"
+        f"## Проект: {project_name}\n\n"
+        f"**Грант:** {grant_name}\n"
+        f"**Регион:** {region}\n\n"
+        f"**Проблема:**\n{problem}\n\n"
+        f"**Целевая аудитория:** {audience}\n\n"
+        f"**Бюджет:** {budget}\n"
+        f"**Команда:** {team}\n\n"
+        f"---\n\n"
+        f"## Питч\n\n"
+        f"{project_name} решает [{problem[:80] if problem else 'проблему'}] "
+        f"для аудитории '{audience}'. "
+        f"Команда: {team}. Бюджет: {budget}.\n\n"
+        f"---\n\n"
+        f"## Структура для комиссии\n\n"
+        f"1. **Проблема:** {problem}\n"
+        f"2. **Решение:** [опиши]\n"
+        f"3. **Рынок:** {region}\n"
+        f"4. **Команда:** {team}\n"
+        f"5. **Финансы:** {budget}\n"
+        f"6. **Следующие шаги:** [что сделаешь с грантом]\n\n"
+        f"---\n"
+        f"*Сгенерировано Grant Architect Mini App*\n"
+    )
+
+    safe_name = project_name.lower().replace(" ", "_")[:40]
+    gh_path = f"projects/applications/{safe_name}_application.md"
+    ok, _ = gh_upload_file(gh_path, draft.encode("utf-8"), f"apply: {project_name} via Mini App")
+
+    saved_note = f"\n📂 Сохранено: `{gh_path}`" if ok else ""
+    header = f"✅ *Черновик заявки готов!*{saved_note}\n\n"
+
+    full = header + draft
+    if len(full) <= 4096:
+        await update.message.reply_text(full, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(header, parse_mode="Markdown")
+        for i in range(0, len(draft), 4000):
+            await update.message.reply_text(
+                f"```\n{draft[i:i+4000]}\n```", parse_mode="Markdown"
+            )
+
+
+async def start_apply_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    ctx.user_data.clear()
+    await query.message.reply_text(
+        "📋 *Wizard заявки на грант*\n\n"
+        "Я задам 6 вопросов и составлю черновик заявки.\n"
+        "Напиши /cancel чтобы выйти.\n\n"
+        "*Шаг 1 из 6*\nКак называется твой проект?",
+        parse_mode="Markdown",
+    )
+    ctx.user_data["_wizard_started"] = True
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -575,12 +674,15 @@ async def main() -> None:
     tg_app.add_handler(CommandHandler("upload",    upload_cmd))
     tg_app.add_handler(CommandHandler("search",    search_cmd))
     tg_app.add_handler(CallbackQueryHandler(subfolder_callback, pattern=r"^sf_"))
+    tg_app.add_handler(CallbackQueryHandler(start_apply_callback, pattern=r"^start_apply$"))
+    tg_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
     tg_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     web_app = web.Application()
     web_app.router.add_get("/",          api_health)
     web_app.router.add_get("/health",    api_health)
     web_app.router.add_get("/api/files", api_files)
+    web_app.router.add_get("/app",       serve_miniapp)
 
     async with tg_app:
         await tg_app.start()

@@ -6,6 +6,7 @@
   <title>Grant AI — Smart Grant Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     /* ── Reset & Base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -931,6 +932,15 @@ function goNav(id) {
    LOADING SIMULATION
 ═══════════════════════════════════════════ */
 function startSearch() {
+  // Store form data for sendData later
+  window._projectData = {
+    name:     (document.getElementById('proj-name')?.value     || '').trim(),
+    region:   (document.getElementById('proj-region')?.value   || '').trim(),
+    problem:  (document.getElementById('proj-problem')?.value  || '').trim(),
+    audience: (document.getElementById('proj-audience')?.value || '').trim(),
+    budget:   (document.getElementById('proj-budget')?.value   || '').trim(),
+    team:     (document.getElementById('proj-team')?.value     || '').trim(),
+  };
   goTo('loading');
   const steps = document.querySelectorAll('.loader-step');
   steps.forEach(s => { s.classList.remove('done','active'); });
@@ -1114,18 +1124,32 @@ function renderProjects() {
 ═══════════════════════════════════════════ */
 function applyGrant(id) {
   const g = GRANTS.find(x => x.id === id);
-  showToast(`🚀 Redirecting to ${g.name} application…`);
+  showToast(`🚀 Opening ${g.name} application…`);
 }
 function saveGrant(id) {
   const g = GRANTS.find(x => x.id === id);
   showToast(`💾 "${g.name}" saved to My Projects`);
-  const projName = document.getElementById('proj-name') ? document.getElementById('proj-name').value : 'New Project';
-  SAVED_PROJECTS.unshift({ name: projName || 'Unnamed Project', region: 'Global', grants: 1, progress: 10, status: 'Research' });
+  const projName = window._projectData?.name || 'New Project';
+  SAVED_PROJECTS.unshift({ name: projName, region: window._projectData?.region || 'Global', grants: 1, progress: 10, status: 'Research' });
 }
 function generateApp(id) {
   const g = GRANTS.find(x => x.id === id);
-  showToast(`✨ Generating application for ${g.name}…`);
-  setTimeout(() => showToast('📝 Application draft ready! Check your email.'), 2500);
+  const grantTypeMap = { 1:'eu', 2:'eu', 3:'usa', 4:'eu', 5:'startups' };
+  const payload = JSON.stringify({
+    action:     'apply',
+    grant_name: g.name,
+    grant_org:  g.org,
+    grant_type: grantTypeMap[id] || 'eu',
+    ...(window._projectData || {}),
+  });
+  const tgApp = window.Telegram?.WebApp;
+  if (tgApp && tgApp.initData) {
+    tgApp.sendData(payload);
+  } else {
+    // Fallback: show toast (browser preview mode)
+    showToast(`✨ Generating application for ${g.name}…`);
+    setTimeout(() => showToast('📝 Open in Telegram to send to bot.'), 2500);
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -1159,9 +1183,40 @@ function signInSocial(provider) {
 }
 
 /* ═══════════════════════════════════════════
+   TELEGRAM MINI APP INIT
+═══════════════════════════════════════════ */
+(function initTelegramApp() {
+  const tgApp = window.Telegram?.WebApp;
+  if (tgApp && tgApp.initData) {
+    tgApp.ready();
+    tgApp.expand();
+
+    const user = tgApp.initDataUnsafe?.user;
+    if (user) {
+      // Skip login — Telegram already knows who this is
+      document.getElementById('bottom-nav').style.display = 'flex';
+      goTo('home', false);
+      history = ['home'];
+
+      // Greet by name on home screen
+      const heroP = document.querySelector('.home-hero p');
+      if (heroP) heroP.textContent = `Привет, ${user.first_name}! Найдём грант для твоего проекта.`;
+    }
+
+    // Apply Telegram theme colors if available
+    const tp = tgApp.themeParams;
+    if (tp?.bg_color) {
+      document.documentElement.style.setProperty('--bg', tp.bg_color);
+    }
+  } else {
+    // Browser / preview mode — show login screen as normal
+    document.getElementById('bottom-nav').style.display = 'none';
+  }
+})();
+
+/* ═══════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════ */
-document.getElementById('bottom-nav').style.display = 'none';
 renderGrants();
 renderDonors();
 renderProjects();
