@@ -41,8 +41,9 @@ if not GH_TOKEN:
 
 GH_BASE = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents"
 
-# URL where the Mini App is served (set in Render env vars after first deploy)
-MINI_APP_URL = os.environ.get("MINI_APP_URL", "")
+# Render automatically provides RENDER_EXTERNAL_URL — no manual setup needed
+_render_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+MINI_APP_URL = os.environ.get("MINI_APP_URL") or (f"{_render_url}/app" if _render_url else "")
 
 # ---------------------------------------------------------------------------
 # Folder structure
