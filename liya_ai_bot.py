@@ -11,6 +11,8 @@ Env vars:
   SALES_VIDEO_URL  — ссылка на продающее видео (Loom / YouTube)
   CALENDAR_LINK    — ссылка на Google Calendar / Calendly для записи
   ADMIN_CHAT_ID    — твой личный Telegram chat_id (получить через @userinfobot)
+  PAYMENT_LINK     — ссылка на страницу оплаты (Stripe / PayPal / иное)
+  PRICE_INCREASE_PCT — процент повышения цены после дедлайна (по умолчанию: 20)
   PORT             — порт (по умолчанию: 8080)
 """
 import asyncio
@@ -41,6 +43,8 @@ CODE_WORD     = os.environ.get("CODE_WORD",       "AI").upper()
 VIDEO_URL     = os.environ.get("SALES_VIDEO_URL", "")
 CALENDAR_LINK = os.environ.get("CALENDAR_LINK",   "")
 ADMIN_ID      = os.environ.get("ADMIN_CHAT_ID",   "")
+PAYMENT_LINK  = os.environ.get("PAYMENT_LINK",   "")
+PRICE_INCREASE = int(os.environ.get("PRICE_INCREASE_PCT", "20"))
 PORT          = int(os.environ.get("PORT", 8080))
 
 if not TG_TOKEN:
@@ -130,6 +134,15 @@ MSG_ADMIN_LEAD = (
     "🕐 {time}"
 )
 
+MSG_PAYMENT = (
+    "Привет! 👋\n\n"
+    "Спасибо за нашу сессию — надеюсь, она была полезной!\n\n"
+    "Вот ссылка для оплаты следующего шага:\n"
+    "{payment_link}\n\n"
+    "Цена актуальна *48 часов*. После — вырастет на {pct}%.\n\n"
+    "Если есть вопросы — просто напиши мне здесь. 🙂"
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -140,11 +153,13 @@ def _user_label(user) -> str:
     return f"{name} ({username})"
 
 
-async def _notify_admin(ctx, text: str) -> None:
+async def _notify_admin(ctx, text: str, reply_markup=None) -> None:
     if not ADMIN_ID:
         return
     try:
-        await ctx.bot.send_message(ADMIN_ID, text, parse_mode="Markdown")
+        await ctx.bot.send_message(
+            ADMIN_ID, text, parse_mode="Markdown", reply_markup=reply_markup
+        )
     except Exception as exc:
         logger.warning("Admin notify failed: %s", exc)
 
@@ -176,9 +191,9 @@ async def code_word_trigger(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END
 
     user = update.effective_user
-    ctx.user_data["user_label"] = _user_label(user)
     ctx.user_data.clear()
     ctx.user_data["user_label"] = _user_label(user)
+    ctx.user_data["chat_id"] = update.effective_chat.id
 
     await update.message.reply_text(MSG_WELCOME, parse_mode="Markdown")
 
@@ -269,13 +284,41 @@ async def f_date(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["date_text"] = update.message.text
     await update.message.reply_text(MSG_DATE_RECEIVED, parse_mode="Markdown")
 
+    chat_id = ctx.user_data.get("chat_id", "")
+    pay_markup = None
+    if PAYMENT_LINK and chat_id:
+        pay_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Отправить ссылку на оплату", callback_data=f"pay:{chat_id}")]
+        ])
+
     await _notify_admin(
         ctx,
-        f"📅 *{ctx.user_data.get('user_label', '—')} указал(а) время:*\n"
-        f"{update.message.text}",
+        f"📅 *{ctx.user_data.get('user_label', '—')} записал(а) время:*\n"
+        f"{update.message.text}\n\n"
+        "Нажми кнопку после сессии — бот отправит ссылку на оплату.",
+        reply_markup=pay_markup,
     )
     ctx.user_data.clear()
     return ConversationHandler.END
+
+
+async def send_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin presses 'Send payment link' button → bot DMs the user."""
+    query = update.callback_query
+    await query.answer()
+
+    user_chat_id = int(query.data.split(":", 1)[1])
+    try:
+        await ctx.bot.send_message(
+            user_chat_id,
+            MSG_PAYMENT.format(payment_link=PAYMENT_LINK, pct=PRICE_INCREASE),
+            parse_mode="Markdown",
+        )
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("✅ Ссылка на оплату отправлена!")
+    except Exception as exc:
+        logger.warning("send_payment failed: %s", exc)
+        await query.message.reply_text(f"❌ Не удалось отправить: {exc}")
 
 
 async def cancel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -328,6 +371,7 @@ async def main() -> None:
     tg_app.add_handler(funnel)
     tg_app.add_handler(CommandHandler("start", start))
     tg_app.add_handler(CommandHandler("help",  help_cmd))
+    tg_app.add_handler(CallbackQueryHandler(send_payment, pattern=r"^pay:\d+$"))
 
     web_app = web.Application()
     web_app.router.add_get("/",       api_health)
