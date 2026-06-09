@@ -6,7 +6,7 @@ Idea → Money OS / Meaning Tunnel
   Кодовое слово → видео → квалификация → оффер → запись → подтверждение
 
 Env vars:
-  LIA_BOT_TOKEN    — токен бота (@BotFather → /newbot)
+  LIYA_BOT_TOKEN    — токен бота (@BotFather → /newbot)
   CODE_WORD        — кодовое слово для входа (по умолчанию: AI)
   SALES_VIDEO_URL  — ссылка на продающее видео (Loom / YouTube)
   CALENDAR_LINK    — ссылка на Google Calendar / Calendly для записи
@@ -36,7 +36,7 @@ from telegram.ext import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-TG_TOKEN      = os.environ.get("LIA_BOT_TOKEN")
+TG_TOKEN      = os.environ.get("LIYA_BOT_TOKEN")
 CODE_WORD     = os.environ.get("CODE_WORD",       "AI").upper()
 VIDEO_URL     = os.environ.get("SALES_VIDEO_URL", "")
 CALENDAR_LINK = os.environ.get("CALENDAR_LINK",   "")
@@ -44,7 +44,7 @@ ADMIN_ID      = os.environ.get("ADMIN_CHAT_ID",   "")
 PORT          = int(os.environ.get("PORT", 8080))
 
 if not TG_TOKEN:
-    raise ValueError("LIA_BOT_TOKEN is not set")
+    raise ValueError("LIYA_BOT_TOKEN is not set")
 
 # ---------------------------------------------------------------------------
 # Funnel states
