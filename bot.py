@@ -12,6 +12,7 @@ from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    ConversationHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -40,7 +41,7 @@ if not GH_TOKEN:
 GH_BASE = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/contents"
 
 # ---------------------------------------------------------------------------
-# Folder structure to create on first run
+# Folder structure
 # ---------------------------------------------------------------------------
 INIT_FOLDERS = [
     "grants/eu",
@@ -54,7 +55,6 @@ INIT_FOLDERS = [
     "uploads",
 ]
 
-# command → (root_folder, subfolders_or_None)
 COMMAND_FOLDERS = {
     "grant":     ("grants",    ["eu", "usa", "poland", "startups"]),
     "project":   ("projects",  ["ideas", "applications"]),
@@ -64,8 +64,13 @@ COMMAND_FOLDERS = {
 
 ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "txt", "md"}
 
-# in-memory session state  {user_id: {"folder": str, "ready": bool}}
+# in-memory upload state  {user_id: {"folder": str, "ready": bool}}
 user_state: dict = {}
+
+# ---------------------------------------------------------------------------
+# Grant application wizard states
+# ---------------------------------------------------------------------------
+W_NAME, W_DESC, W_LOCATION, W_MODEL, W_BUDGET, W_GRANT_TYPE = range(6)
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +84,6 @@ def gh_headers() -> dict:
 
 
 def gh_upload_file(path: str, content_bytes: bytes, message: str) -> tuple[bool, dict]:
-    """Create or update a file in GitHub. Returns (ok, response_json)."""
     url = f"{GH_BASE}/{path}"
     r = requests.get(url, headers=gh_headers(), timeout=15)
     sha = r.json().get("sha") if r.status_code == 200 else None
@@ -96,7 +100,6 @@ def gh_upload_file(path: str, content_bytes: bytes, message: str) -> tuple[bool,
 
 
 def gh_list_files(folder: str = "", depth: int = 0) -> list[dict]:
-    """Recursively list all non-.gitkeep files under *folder*."""
     if depth > 5:
         return []
     url = f"{GH_BASE}/{folder}" if folder else GH_BASE
@@ -122,7 +125,6 @@ def gh_list_files(folder: str = "", depth: int = 0) -> list[dict]:
 
 
 def ensure_folder_structure() -> None:
-    """Create .gitkeep placeholders for every required folder."""
     for folder in INIT_FOLDERS:
         path = f"{folder}/.gitkeep"
         url = f"{GH_BASE}/{path}"
@@ -140,12 +142,14 @@ def ensure_folder_structure() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Telegram command handlers
+# File upload handlers
 # ---------------------------------------------------------------------------
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "✦ *Grant Architect Bot*\n\n"
-        "Я храню файлы для курса и помогаю искать гранты.\n\n"
+        "Помогаю собрать заявку на грант и хранить файлы курса.\n\n"
+        "📋 *Заявка на грант:*\n"
+        "/apply — пройти wizard и получить черновик заявки\n\n"
         "📁 *Загрузка файлов:*\n"
         "/grant — сохранить в /grants\n"
         "/project — сохранить в /projects\n"
@@ -161,22 +165,21 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "✦ *Помощь — Grant Architect Bot*\n\n"
+        "*Wizard заявки:*\n"
+        "/apply — 6 вопросов о проекте → черновик заявки + сохранение в GitHub\n\n"
         "*Как загрузить файл:*\n"
-        "1. Отправь команду (/grant, /project, /knowledge, /upload)\n"
-        "2. Выбери подпапку (кнопки появятся)\n"
-        "3. Пришли файл (PDF, DOCX, DOC, TXT, MD)\n"
-        "4. Файл автоматически сохранится в GitHub\n\n"
+        "1. Отправь команду (/grant, /project и т.д.)\n"
+        "2. Выбери подпапку\n"
+        "3. Пришли файл (PDF, DOCX, DOC, TXT, MD)\n\n"
         "*Поиск:*\n"
-        "`/search грант` — ищет по имени файлов в репозитории\n\n"
-        "*Структура папок в GitHub:*\n"
+        "`/search грант` — ищет по именам файлов\n\n"
+        "*Структура папок:*\n"
         "```\n"
         "grants/  eu/ usa/ poland/ startups/\n"
         "projects/  ideas/ applications/\n"
         "knowledge/  guides/ templates/\n"
         "uploads/\n"
-        "```\n"
-        "*API для приложения:*\n"
-        "`GET /api/files` — список всех файлов",
+        "```",
         parse_mode="Markdown",
     )
 
@@ -242,7 +245,6 @@ async def subfolder_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
-    # data = "sf_grants/eu" or "sf_grants"
     folder_path = query.data[3:]  # strip "sf_"
     state = user_state.get(uid, {})
     state["folder"] = folder_path
@@ -279,15 +281,16 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         f"⏳ Скачиваю *{fname}*...", parse_mode="Markdown"
     )
 
-    # Download from Telegram
     try:
         tg_file = await ctx.bot.get_file(doc.file_id)
         file_bytes = bytes(await tg_file.download_as_bytearray())
     except Exception as exc:
-        await status_msg.edit_text(f"❌ Ошибка скачивания из Telegram:\n`{exc}`", parse_mode="Markdown")
+        await status_msg.edit_text(
+            f"❌ Ошибка скачивания из Telegram:\n`{exc}`", parse_mode="Markdown"
+        )
         return
 
-    await status_msg.edit_text(f"⏳ Загружаю в GitHub...", parse_mode="Markdown")
+    await status_msg.edit_text("⏳ Загружаю в GitHub...", parse_mode="Markdown")
 
     folder = state["folder"]
     gh_path = f"{folder}/{fname}"
@@ -302,8 +305,7 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
             f"✅ *Загружено в GitHub!*\n\n"
             f"📄 Файл: `{fname}`\n"
             f"📂 Путь: `{gh_path}`\n"
-            f"📦 Размер: {size_kb:.1f} KB\n\n"
-            f"✦ Uploaded to GitHub: {gh_path}",
+            f"📦 Размер: {size_kb:.1f} KB",
             parse_mode="Markdown",
         )
         user_state.pop(uid, None)
@@ -351,7 +353,168 @@ async def search_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ---------------------------------------------------------------------------
-# aiohttp web server  (/api/files, /health)
+# Grant application wizard
+# ---------------------------------------------------------------------------
+async def apply_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data.clear()
+    await update.message.reply_text(
+        "📋 *Wizard заявки на грант*\n\n"
+        "Я задам 6 вопросов и составлю черновик заявки.\n"
+        "Напиши /cancel в любой момент чтобы выйти.\n\n"
+        "*Шаг 1 из 6*\n"
+        "Как называется твой проект?",
+        parse_mode="Markdown",
+    )
+    return W_NAME
+
+
+async def w_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["name"] = update.message.text
+    await update.message.reply_text(
+        "*Шаг 2 из 6*\n"
+        "Опиши проект: что он делает и какую проблему решает?",
+        parse_mode="Markdown",
+    )
+    return W_DESC
+
+
+async def w_desc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["desc"] = update.message.text
+    await update.message.reply_text(
+        "*Шаг 3 из 6*\n"
+        "В какой стране / регионе работает проект?",
+        parse_mode="Markdown",
+    )
+    return W_LOCATION
+
+
+async def w_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["location"] = update.message.text
+    await update.message.reply_text(
+        "*Шаг 4 из 6*\n"
+        "Как устроен бизнес: модель, команда, стадия?\n"
+        "_(идея / MVP / работающий продукт)_",
+        parse_mode="Markdown",
+    )
+    return W_MODEL
+
+
+async def w_model(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["model"] = update.message.text
+    await update.message.reply_text(
+        "*Шаг 5 из 6*\n"
+        "Какой бюджет нужен и есть ли собственный вклад?",
+        parse_mode="Markdown",
+    )
+    return W_BUDGET
+
+
+async def w_budget(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["budget"] = update.message.text
+    buttons = [
+        [
+            InlineKeyboardButton("🇪🇺 EU", callback_data="gtype_eu"),
+            InlineKeyboardButton("🇺🇸 USA", callback_data="gtype_usa"),
+        ],
+        [
+            InlineKeyboardButton("🇵🇱 Польша", callback_data="gtype_poland"),
+            InlineKeyboardButton("🚀 Стартапы", callback_data="gtype_startups"),
+        ],
+    ]
+    await update.message.reply_text(
+        "*Шаг 6 из 6*\n"
+        "Какой тип гранта тебя интересует?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    return W_GRANT_TYPE
+
+
+async def w_grant_type(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    grant_type_map = {
+        "gtype_eu": "EU",
+        "gtype_usa": "USA",
+        "gtype_poland": "Польша",
+        "gtype_startups": "Стартапы",
+    }
+    grant_type = grant_type_map.get(query.data, query.data)
+    ctx.user_data["grant_type"] = grant_type
+
+    d = ctx.user_data
+    project_name = d.get("name", "Проект")
+
+    draft = (
+        f"# Черновик заявки на грант\n\n"
+        f"## Проект: {project_name}\n\n"
+        f"**Описание:**\n{d.get('desc', '')}\n\n"
+        f"**Местонахождение:**\n{d.get('location', '')}\n\n"
+        f"**Бизнес-модель и стадия:**\n{d.get('model', '')}\n\n"
+        f"**Бюджет:**\n{d.get('budget', '')}\n\n"
+        f"**Тип гранта:** {grant_type}\n\n"
+        f"---\n\n"
+        f"## Питч (1 абзац)\n\n"
+        f"{project_name} решает проблему [опиши боль рынка] "
+        f"через {d.get('desc', '[опиши решение]')}. "
+        f"Команда: {d.get('model', '[команда и стадия]')}. "
+        f"Мы ищем финансирование {d.get('budget', '[сумма]')} "
+        f"для масштабирования в регионе {d.get('location', '[регион]')}.\n\n"
+        f"---\n\n"
+        f"## Структура презентации для комиссии\n\n"
+        f"1. **Проблема:** [опиши боль рынка]\n"
+        f"2. **Решение:** {d.get('desc', '')}\n"
+        f"3. **Рынок:** [размер и потенциал]\n"
+        f"4. **Команда:** {d.get('model', '')}\n"
+        f"5. **Финансы:** {d.get('budget', '')}\n"
+        f"6. **Следующие шаги:** [что сделаешь с грантом]\n\n"
+        f"---\n"
+        f"*Сгенерировано Grant Architect Bot*\n"
+    )
+
+    await query.edit_message_text(
+        "⏳ Составляю черновик и сохраняю в GitHub...",
+        parse_mode="Markdown",
+    )
+
+    safe_name = project_name.lower().replace(" ", "_")[:40]
+    gh_path = f"projects/applications/{safe_name}_application.md"
+    ok, _ = gh_upload_file(gh_path, draft.encode("utf-8"), f"apply: {project_name}")
+
+    saved_note = f"\n\n📂 Сохранено: `{gh_path}`" if ok else ""
+
+    # Telegram has 4096 char limit; send draft in chunks if needed
+    header = f"✅ *Черновик заявки готов!*{saved_note}\n\n"
+    full_text = header + draft
+    if len(full_text) <= 4096:
+        await ctx.bot.send_message(
+            query.from_user.id, full_text, parse_mode="Markdown"
+        )
+    else:
+        await ctx.bot.send_message(
+            query.from_user.id, header, parse_mode="Markdown"
+        )
+        # Send draft in 4000-char chunks
+        for i in range(0, len(draft), 4000):
+            await ctx.bot.send_message(
+                query.from_user.id,
+                f"```\n{draft[i:i+4000]}\n```",
+                parse_mode="Markdown",
+            )
+
+    ctx.user_data.clear()
+    return ConversationHandler.END
+
+
+async def cancel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data.clear()
+    await update.message.reply_text("❌ Wizard отменён. Напиши /apply чтобы начать заново.")
+    return ConversationHandler.END
+
+
+# ---------------------------------------------------------------------------
+# aiohttp web server
 # ---------------------------------------------------------------------------
 async def api_files(request: web.Request) -> web.Response:
     folder = request.rel_url.query.get("folder", "")
@@ -380,15 +543,30 @@ async def api_health(request: web.Request) -> web.Response:
 # Entry point
 # ---------------------------------------------------------------------------
 async def main() -> None:
-    # 1. Initialise GitHub folder structure (blocking, but runs once at startup)
     logger.info("Initialising GitHub folder structure…")
     try:
         ensure_folder_structure()
     except Exception as exc:
         logger.warning("Could not init folder structure: %s", exc)
 
-    # 2. Build Telegram application
     tg_app = Application.builder().token(TG_TOKEN).build()
+
+    # Grant application wizard (ConversationHandler must be registered first)
+    grant_wizard = ConversationHandler(
+        entry_points=[CommandHandler("apply", apply_cmd)],
+        states={
+            W_NAME:       [MessageHandler(filters.TEXT & ~filters.COMMAND, w_name)],
+            W_DESC:       [MessageHandler(filters.TEXT & ~filters.COMMAND, w_desc)],
+            W_LOCATION:   [MessageHandler(filters.TEXT & ~filters.COMMAND, w_location)],
+            W_MODEL:      [MessageHandler(filters.TEXT & ~filters.COMMAND, w_model)],
+            W_BUDGET:     [MessageHandler(filters.TEXT & ~filters.COMMAND, w_budget)],
+            W_GRANT_TYPE: [CallbackQueryHandler(w_grant_type, pattern=r"^gtype_")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_cmd)],
+    )
+    tg_app.add_handler(grant_wizard)
+
+    # File upload commands
     tg_app.add_handler(CommandHandler("start",     start))
     tg_app.add_handler(CommandHandler("help",      help_cmd))
     tg_app.add_handler(CommandHandler("grant",     grant_cmd))
@@ -399,13 +577,11 @@ async def main() -> None:
     tg_app.add_handler(CallbackQueryHandler(subfolder_callback, pattern=r"^sf_"))
     tg_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    # 3. Build aiohttp web app
     web_app = web.Application()
     web_app.router.add_get("/",          api_health)
     web_app.router.add_get("/health",    api_health)
     web_app.router.add_get("/api/files", api_files)
 
-    # 4. Run Telegram polling + HTTP server concurrently
     async with tg_app:
         await tg_app.start()
         await tg_app.updater.start_polling(drop_pending_updates=True)
@@ -417,7 +593,6 @@ async def main() -> None:
         await site.start()
         logger.info("✦ Web server on port %d", PORT)
 
-        # Block until SIGINT / SIGTERM
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
