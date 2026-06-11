@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Запись на консультацию</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface2: #1a1a1a;
+      --border: #242424;
+      --text: #ffffff;
+      --muted: #555;
+      --muted2: #888;
+      --accent: #c41e3a;
+      --accent-h: #e02040;
+      --green: #22c55e;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px 60px;
+    }
+
+    /* Header */
+    .site-header {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 40px;
+    }
+
+    .logo {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    /* Progress */
+    .progress-wrap {
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 36px;
+    }
+
+    .progress-bar {
+      display: flex;
+      gap: 5px;
+    }
+
+    .p-seg {
+      height: 2px;
+      flex: 1;
+      border-radius: 2px;
+      background: var(--border);
+      transition: background 0.4s;
+    }
+
+    .p-seg.done { background: var(--green); }
+    .p-seg.active { background: var(--accent); }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+
+    .p-step-label {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted2);
+    }
+
+    /* Container */
+    .container {
+      width: 100%;
+      max-width: 480px;
+    }
+
+    /* Steps */
+    .step {
+      display: none;
+    }
+
+    .step.active {
+      display: block;
+      animation: fadeUp 0.3s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-title {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    .step-sub {
+      font-size: 14px;
+      color: var(--muted2);
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+
+    /* Back button */
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: var(--muted2);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 20px;
+      transition: color 0.2s;
+    }
+
+    .btn-back:hover { color: var(--text); }
+
+    /* Calendar */
+    .cal-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .cal-month-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .cal-arrow {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      line-height: 1;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .cal-arrow:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .cal-arrow:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .cal-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+
+    .cal-wd {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      padding: 6px 0;
+      text-transform: uppercase;
+    }
+
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+
+    .cal-day {
+      aspect-ratio: 1;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 400;
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.12s;
+    }
+
+    .cal-day:hover:not(:disabled):not(.sel) {
+      background: var(--surface2);
+      border-color: var(--border);
+    }
+
+    .cal-day.sel {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .cal-day.today:not(.sel) {
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .cal-day:disabled {
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    .cal-day.ghost {
+      opacity: 0.18;
+    }
+
+    /* Slots */
+    .slots-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .slots-icon {
+      font-size: 18px;
+    }
+
+    .slots-date-label {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .slots-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .slot {
+      padding: 15px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      font-family: 'Inter', sans-serif;
+      text-align: center;
+      transition: all 0.12s;
+    }
+
+    .slot:hover:not(.sel):not(.taken) {
+      border-color: var(--accent);
+    }
+
+    .slot.sel {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 700;
+    }
+
+    .slot.taken {
+      opacity: 0.3;
+      cursor: not-allowed;
+      text-decoration: line-through;
+      font-size: 13px;
+    }
+
+    /* Form */
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted2);
+      margin-bottom: 7px;
+    }
+
+    .field-input {
+      width: 100%;
+      padding: 13px 15px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .field-input:focus { border-color: var(--accent); }
+    .field-input::placeholder { color: var(--muted); }
+
+    textarea.field-input {
+      min-height: 82px;
+      resize: none;
+      line-height: 1.5;
+    }
+
+    /* Summary card */
+    .summary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0 16px;
+      margin-bottom: 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .summary-row:last-child { border-bottom: none; }
+
+    .s-key { color: var(--muted2); }
+    .s-val { font-weight: 600; }
+
+    /* Primary button */
+    .btn-primary {
+      width: 100%;
+      padding: 16px;
+      background: var(--accent);
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      margin-top: 24px;
+      letter-spacing: 0.01em;
+      transition: background 0.15s, transform 0.08s, opacity 0.2s;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+    .btn-primary:active:not(:disabled) { transform: scale(0.985); }
+    .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Confirmation screen */
+    .confirm-screen {
+      text-align: center;
+      padding: 12px 0;
+    }
+
+    .confirm-circle {
+      width: 76px;
+      height: 76px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      border: 2px solid var(--green);
+      background: rgba(34, 197, 94, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .confirm-check {
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .confirm-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .confirm-sub {
+      font-size: 14px;
+      color: var(--muted2);
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .tg-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 14px 28px;
+      background: #229ED9;
+      border-radius: 12px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      margin-bottom: 24px;
+    }
+
+    .tg-btn:hover { opacity: 0.85; }
+
+    .restart-btn {
+      display: block;
+      background: none;
+      border: none;
+      color: var(--muted2);
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      margin: 0 auto;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .restart-btn:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="logo">консультация<span>.</span></div>
+  </header>
+
+  <!-- Progress -->
+  <div class="progress-wrap">
+    <div class="progress-bar">
+      <div class="p-seg" id="ps1"></div>
+      <div class="p-seg" id="ps2"></div>
+      <div class="p-seg" id="ps3"></div>
+      <div class="p-seg" id="ps4"></div>
+    </div>
+    <div class="progress-meta">
+      <span class="p-step-label" id="p-label">Выберите дату</span>
+      <span class="p-step-label" id="p-counter">Шаг 1 / 3</span>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <main class="container">
+
+    <!-- STEP 1: Дата -->
+    <div class="step active" id="step-1">
+      <h1 class="step-title">Когда вам удобно?</h1>
+      <p class="step-sub">Выберите дату консультации</p>
+
+      <div class="cal-nav">
+        <button class="cal-arrow" id="prev-m">‹</button>
+        <div class="cal-month-name" id="month-label"></div>
+        <button class="cal-arrow" id="next-m">›</button>
+      </div>
+
+      <div class="cal-weekdays">
+        <div class="cal-wd">Пн</div>
+        <div class="cal-wd">Вт</div>
+        <div class="cal-wd">Ср</div>
+        <div class="cal-wd">Чт</div>
+        <div class="cal-wd">Пт</div>
+        <div class="cal-wd">Сб</div>
+        <div class="cal-wd">Вс</div>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+
+      <button class="btn-primary" id="btn-1" disabled>Выбрать время →</button>
+    </div>
+
+    <!-- STEP 2: Время -->
+    <div class="step" id="step-2">
+      <button class="btn-back" onclick="goTo(1)">← Назад</button>
+      <h1 class="step-title">Выберите время</h1>
+      <p class="step-sub">Длительность консультации — 60 минут</p>
+
+      <div class="slots-header">
+        <span class="slots-icon">📅</span>
+        <span class="slots-date-label" id="slots-date-label">—</span>
+      </div>
+
+      <div class="slots-grid" id="slots-grid"></div>
+
+      <button class="btn-primary" id="btn-2" disabled>Далее →</button>
+    </div>
+
+    <!-- STEP 3: Контакты -->
+    <div class="step" id="step-3">
+      <button class="btn-back" onclick="goTo(2)">← Назад</button>
+      <h1 class="step-title">Ваши данные</h1>
+      <p class="step-sub">Как с вами связаться для подтверждения</p>
+
+      <div class="summary" id="s3-summary">
+        <div class="summary-row">
+          <span class="s-key">Дата</span>
+          <span class="s-val" id="s3-date">—</span>
+        </div>
+        <div class="summary-row">
+          <span class="s-key">Время</span>
+          <span class="s-val" id="s3-time">—</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="f-name">Ваше имя</label>
+        <input class="field-input" type="text" id="f-name" placeholder="Как вас зовут?">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="f-contact">Telegram или телефон</label>
+        <input class="field-input" type="text" id="f-contact" placeholder="@username или +7 999 000 00 00">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="f-topic">Тема (необязательно)</label>
+        <textarea class="field-input" id="f-topic" placeholder="Кратко опишите свой запрос..."></textarea>
+      </div>
+
+      <button class="btn-primary" id="btn-3">Записаться на консультацию</button>
+    </div>
+
+    <!-- STEP 4: Готово -->
+    <div class="step" id="step-4">
+      <div class="confirm-screen">
+        <div class="confirm-circle">
+          <span class="confirm-check">✓</span>
+        </div>
+        <h1 class="confirm-title">Заявка принята!</h1>
+        <p class="confirm-sub">
+          Нажмите кнопку ниже, чтобы отправить заявку<br>
+          прямо в Telegram — так мы подтвердим запись быстрее.
+        </p>
+
+        <div class="summary" id="s4-summary" style="text-align:left; margin-bottom:24px;">
+          <div class="summary-row">
+            <span class="s-key">Дата</span>
+            <span class="s-val" id="s4-date">—</span>
+          </div>
+          <div class="summary-row">
+            <span class="s-key">Время</span>
+            <span class="s-val" id="s4-time">—</span>
+          </div>
+          <div class="summary-row">
+            <span class="s-key">Имя</span>
+            <span class="s-val" id="s4-name">—</span>
+          </div>
+          <div class="summary-row">
+            <span class="s-key">Контакт</span>
+            <span class="s-val" id="s4-contact">—</span>
+          </div>
+        </div>
+
+        <a class="tg-btn" id="tg-link" href="#" target="_blank" rel="noopener">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2 15 22 11 13 2 9 22 2Z" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+          Отправить заявку в Telegram
+        </a>
+
+        <button class="restart-btn" onclick="restart()">Записаться ещё раз</button>
+      </div>
+    </div>
+
+  </main>
+
+<script>
+  // ─── НАСТРОЙКИ ──────────────────────────────────────────────────────────────
+  const TG_USERNAME  = 'evdokimova_kate';   // ← ваш username без @
+  const AVAIL_DAYS   = [1, 2, 3, 4, 5];     // 0=вс 1=пн … 6=сб  (1-5 = будни)
+  const TIME_SLOTS   = ['10:00','11:00','13:00','14:00','16:00','17:00','19:00'];
+  const BOOKED       = [];                   // занятые слоты: ['2026-06-15 14:00']
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+                     'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня',
+                      'июля','августа','сентября','октября','ноября','декабря'];
+  const DAYS_RU    = ['воскресенье','понедельник','вторник','среда',
+                      'четверг','пятница','суббота'];
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  let viewDate   = new Date(today.getFullYear(), today.getMonth(), 1);
+  let selDate    = null;
+  let selTime    = null;
+
+  // ── Calendar ──────────────────────────────────────────────────────────────
+
+  function renderCalendar() {
+    const yr = viewDate.getFullYear();
+    const mo = viewDate.getMonth();
+
+    document.getElementById('month-label').textContent = `${MONTHS_RU[mo]} ${yr}`;
+
+    // disable prev if current month = today's month
+    const prevBtn = document.getElementById('prev-m');
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    prevBtn.disabled = viewDate <= thisMonthStart;
+
+    const firstDow  = new Date(yr, mo, 1).getDay();         // 0=Sun
+    const startPad  = (firstDow === 0 ? 6 : firstDow - 1); // Mon-based
+    const daysInMo  = new Date(yr, mo + 1, 0).getDate();
+
+    const grid = document.getElementById('cal-grid');
+    grid.innerHTML = '';
+
+    // prev-month padding
+    const prevDays = new Date(yr, mo, 0).getDate();
+    for (let i = startPad - 1; i >= 0; i--) {
+      grid.appendChild(makeDay(new Date(yr, mo - 1, prevDays - i), true));
+    }
+
+    // current month
+    for (let d = 1; d <= daysInMo; d++) {
+      grid.appendChild(makeDay(new Date(yr, mo, d), false));
+    }
+
+    // next-month padding to fill last row
+    const total = grid.children.length;
+    const rem   = total % 7 === 0 ? 0 : 7 - (total % 7);
+    for (let i = 1; i <= rem; i++) {
+      grid.appendChild(makeDay(new Date(yr, mo + 1, i), true));
+    }
+  }
+
+  function makeDay(date, ghost) {
+    const btn = document.createElement('button');
+    btn.className = 'cal-day' + (ghost ? ' ghost' : '');
+    btn.textContent = date.getDate();
+
+    const d0 = new Date(date); d0.setHours(0,0,0,0);
+    const isPast  = d0 < today;
+    const isToday = d0.getTime() === today.getTime();
+    const avail   = AVAIL_DAYS.includes(date.getDay());
+
+    if (isToday && !ghost) btn.classList.add('today');
+
+    if (isPast || !avail || ghost) {
+      btn.disabled = true;
+    } else {
+      btn.addEventListener('click', () => pickDate(date, btn));
+    }
+
+    if (selDate) {
+      const s0 = new Date(selDate); s0.setHours(0,0,0,0);
+      if (d0.getTime() === s0.getTime()) btn.classList.add('sel');
+    }
+
+    return btn;
+  }
+
+  function pickDate(date, btn) {
+    document.querySelectorAll('#cal-grid .sel').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    selDate = date;
+    selTime = null;
+    document.getElementById('btn-1').disabled = false;
+  }
+
+  document.getElementById('prev-m').addEventListener('click', () => {
+    viewDate.setMonth(viewDate.getMonth() - 1);
+    renderCalendar();
+  });
+  document.getElementById('next-m').addEventListener('click', () => {
+    viewDate.setMonth(viewDate.getMonth() + 1);
+    renderCalendar();
+  });
+  document.getElementById('btn-1').addEventListener('click', () => {
+    renderSlots();
+    goTo(2);
+  });
+
+  // ── Slots ─────────────────────────────────────────────────────────────────
+
+  function renderSlots() {
+    const day   = selDate.getDate();
+    const mo    = selDate.getMonth();
+    const yr    = selDate.getFullYear();
+    const dname = DAYS_RU[selDate.getDay()];
+
+    document.getElementById('slots-date-label').textContent =
+      `${day} ${MONTHS_GEN[mo]} ${yr}, ${dname}`;
+
+    const dateKey = fmtDate(selDate);
+    const grid = document.getElementById('slots-grid');
+    grid.innerHTML = '';
+
+    TIME_SLOTS.forEach(t => {
+      const key = `${dateKey} ${t}`;
+      const btn = document.createElement('button');
+      btn.className = 'slot';
+      btn.textContent = t;
+
+      if (BOOKED.includes(key)) {
+        btn.classList.add('taken');
+        btn.disabled = true;
+      } else {
+        if (selTime === t) btn.classList.add('sel');
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.slot.sel').forEach(s => s.classList.remove('sel'));
+          btn.classList.add('sel');
+          selTime = t;
+          document.getElementById('btn-2').disabled = false;
+        });
+      }
+      grid.appendChild(btn);
+    });
+  }
+
+  document.getElementById('btn-2').addEventListener('click', () => {
+    const ds = humanDate(selDate);
+    document.getElementById('s3-date').textContent = ds;
+    document.getElementById('s3-time').textContent = selTime;
+    goTo(3);
+  });
+
+  // ── Form ──────────────────────────────────────────────────────────────────
+
+  document.getElementById('btn-3').addEventListener('click', () => {
+    const name    = document.getElementById('f-name').value.trim();
+    const contact = document.getElementById('f-contact').value.trim();
+    const topic   = document.getElementById('f-topic').value.trim();
+
+    if (!name)    { shake('f-name');    return; }
+    if (!contact) { shake('f-contact'); return; }
+
+    const ds  = humanDate(selDate);
+    const msg = buildMsg(ds, selTime, name, contact, topic);
+    const url = `https://t.me/${TG_USERNAME}?text=${encodeURIComponent(msg)}`;
+
+    document.getElementById('s4-date').textContent    = ds;
+    document.getElementById('s4-time').textContent    = selTime;
+    document.getElementById('s4-name').textContent    = name;
+    document.getElementById('s4-contact').textContent = contact;
+    document.getElementById('tg-link').href           = url;
+
+    goTo(4);
+    setTimeout(() => window.open(url, '_blank'), 300);
+  });
+
+  function shake(id) {
+    const el = document.getElementById(id);
+    el.style.borderColor = 'var(--accent)';
+    el.focus();
+    el.style.animation = 'none';
+    requestAnimationFrame(() => {
+      el.style.animation = 'shakeX 0.3s ease';
+    });
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  function fmtDate(d) {
+    const y  = d.getFullYear();
+    const m  = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }
+
+  function humanDate(d) {
+    return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function buildMsg(date, time, name, contact, topic) {
+    let m = `📅 Запись на консультацию\n\nДата: ${date}\nВремя: ${time}\nИмя: ${name}\nКонтакт: ${contact}`;
+    if (topic) m += `\n\nЗапрос:\n${topic}`;
+    return m;
+  }
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+
+  const STEP_LABELS   = ['Выберите дату', 'Выберите время', 'Ваши данные', 'Готово!'];
+  const STEP_COUNTERS = ['Шаг 1 / 3', 'Шаг 2 / 3', 'Шаг 3 / 3', ''];
+
+  function goTo(n) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById(`step-${n}`).classList.add('active');
+
+    for (let i = 1; i <= 4; i++) {
+      const seg = document.getElementById(`ps${i}`);
+      seg.className = 'p-seg';
+      if (i < n)      seg.classList.add('done');
+      else if (i === n) seg.classList.add('active');
+    }
+
+    document.getElementById('p-label').textContent   = STEP_LABELS[n - 1];
+    document.getElementById('p-counter').textContent = STEP_COUNTERS[n - 1];
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (n === 2) document.getElementById('btn-2').disabled = !selTime;
+  }
+
+  function restart() {
+    selDate = null; selTime = null;
+    document.getElementById('f-name').value    = '';
+    document.getElementById('f-contact').value = '';
+    document.getElementById('f-topic').value   = '';
+    document.getElementById('btn-1').disabled  = true;
+    document.getElementById('btn-2').disabled  = true;
+    renderCalendar();
+    goTo(1);
+  }
+
+  // ── Shake animation ───────────────────────────────────────────────────────
+  const shakeCSS = document.createElement('style');
+  shakeCSS.textContent = `
+    @keyframes shakeX {
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-5px)}
+      40%{transform:translateX(5px)}
+      60%{transform:translateX(-4px)}
+      80%{transform:translateX(4px)}
+    }
+  `;
+  document.head.appendChild(shakeCSS);
+
+  // Init
+  renderCalendar();
+</script>
+</body>
+</html>
