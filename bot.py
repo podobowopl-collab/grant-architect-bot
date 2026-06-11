@@ -26,11 +26,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TG_TOKEN = os.environ.get("TG_BOT_TOKEN")
-GH_TOKEN = os.environ.get("GITHUB_TOKEN")
-GH_OWNER = os.environ.get("GITHUB_OWNER", "podobowopl-collab")
-GH_REPO  = os.environ.get("GITHUB_REPO",  "GRANT-AGENT-COURSE")
-PORT     = int(os.environ.get("PORT", 8080))
+TG_TOKEN      = os.environ.get("TG_BOT_TOKEN")
+GH_TOKEN      = os.environ.get("GITHUB_TOKEN")
+GH_OWNER      = os.environ.get("GITHUB_OWNER", "podobowopl-collab")
+GH_REPO       = os.environ.get("GITHUB_REPO",  "GRANT-AGENT-COURSE")
+PORT          = int(os.environ.get("PORT", 8080))
+ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))   # ваш Telegram user_id
+PAYMENT_LINK  = os.environ.get("PAYMENT_LINK", "")          # ссылка на оплату
 
 if not TG_TOKEN:
     raise ValueError("TG_BOT_TOKEN is not set")
@@ -66,6 +68,9 @@ ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "txt", "md"}
 
 # in-memory session state  {user_id: {"folder": str, "ready": bool}}
 user_state: dict = {}
+
+# booking state  {booking_id: {client_chat_id, name, contact, date, time_slot}}
+pending_bookings: dict = {}
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +148,11 @@ def ensure_folder_structure() -> None:
 # Telegram command handlers
 # ---------------------------------------------------------------------------
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    # Deep-link from booking page: /start bk_<encoded>
+    if ctx.args and ctx.args[0].startswith("bk_"):
+        await _handle_booking(update, ctx, ctx.args[0][3:])
+        return
+
     await update.message.reply_text(
         "✦ *Grant Architect Bot*\n\n"
         "Я храню файлы для курса и помогаю искать гранты.\n\n"
@@ -156,6 +166,107 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "Форматы: PDF, DOCX, TXT, MD",
         parse_mode="Markdown",
     )
+
+
+async def _handle_booking(update: Update, ctx: ContextTypes.DEFAULT_TYPE, encoded: str) -> None:
+    """Called when a client opens the bot via booking deep-link."""
+    import time as _time
+
+    uid = update.effective_user.id
+
+    # Decode compact booking data (base64url → UTF-8 pipe-separated fields)
+    try:
+        padded = encoded.replace("-", "+").replace("_", "/")
+        padded += "=" * (4 - len(padded) % 4)
+        decoded = base64.b64decode(padded).decode("utf-8")
+        parts   = decoded.split("|")
+        name    = parts[0] if len(parts) > 0 else update.effective_user.first_name or "Клиент"
+        date    = parts[1] if len(parts) > 1 else "—"
+        time_s  = parts[2] if len(parts) > 2 else "—"
+        contact = parts[3] if len(parts) > 3 else "—"
+    except Exception:
+        name = update.effective_user.first_name or "Клиент"
+        date = time_s = contact = "—"
+
+    # Store booking
+    booking_id = f"{uid}_{int(_time.time())}"
+    pending_bookings[booking_id] = {
+        "client_chat_id": uid,
+        "name":     name,
+        "contact":  contact,
+        "date":     date,
+        "time_slot": time_s,
+    }
+
+    # Confirm to client
+    await update.message.reply_text(
+        f"✅ *Запись подтверждена!*\n\n"
+        f"🗓 {date}  🕐 {time_s}\n\n"
+        "После нашей сессии вы получите здесь ссылку на оплату.\n\n"
+        "_Больше ничего делать не нужно — ждём вас!_",
+        parse_mode="Markdown",
+    )
+
+    # Notify admin
+    if ADMIN_CHAT_ID:
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "✅ Отправить ссылку на оплату",
+                callback_data=f"pay_{booking_id}",
+            )
+        ]])
+        text = (
+            f"📅 *Новая запись на консультацию*\n\n"
+            f"👤 {name}\n"
+            f"📞 {contact}\n"
+            f"🗓 {date}  🕐 {time_s}"
+        )
+        await ctx.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=kb,
+        )
+    else:
+        logger.warning("ADMIN_CHAT_ID not set — booking notification skipped")
+
+
+async def payment_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin clicks ✅ → bot sends payment link to client."""
+    query = update.callback_query
+    booking_id = query.data[4:]  # strip "pay_"
+    booking = pending_bookings.get(booking_id)
+
+    if not booking:
+        await query.answer("❌ Запись не найдена или уже обработана.", show_alert=True)
+        return
+
+    from datetime import datetime, timedelta
+    deadline = (datetime.now() + timedelta(hours=24)).strftime("%-d %B в %H:%M")
+    link = PAYMENT_LINK or "—"
+
+    try:
+        await ctx.bot.send_message(
+            chat_id=booking["client_chat_id"],
+            text=(
+                f"Привет, {booking['name']}! 👋\n\n"
+                f"Спасибо за нашу сессию!\n\n"
+                f"Ссылка для оплаты консультации:\n"
+                f"🔗 {link}\n\n"
+                f"⏰ Оплатите, пожалуйста, до *{deadline}*"
+            ),
+            parse_mode="Markdown",
+        )
+        await query.answer("✅ Ссылка отправлена!")
+        await query.edit_message_text(
+            query.message.text + "\n\n✅ *Ссылка на оплату отправлена!*",
+            parse_mode="Markdown",
+        )
+        pending_bookings.pop(booking_id, None)
+
+    except Exception as exc:
+        logger.exception("payment_callback error")
+        await query.answer(f"❌ Ошибка: {exc}", show_alert=True)
 
 
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -397,6 +508,7 @@ async def main() -> None:
     tg_app.add_handler(CommandHandler("upload",    upload_cmd))
     tg_app.add_handler(CommandHandler("search",    search_cmd))
     tg_app.add_handler(CallbackQueryHandler(subfolder_callback, pattern=r"^sf_"))
+    tg_app.add_handler(CallbackQueryHandler(payment_callback,   pattern=r"^pay_"))
     tg_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     # 3. Build aiohttp web app

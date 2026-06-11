@@ -569,8 +569,8 @@
         </div>
         <h1 class="confirm-title">Заявка принята!</h1>
         <p class="confirm-sub">
-          Нажмите кнопку ниже, чтобы отправить заявку<br>
-          прямо в Telegram — так мы подтвердим запись быстрее.
+          Нажмите кнопку ниже — откроется бот в Telegram.<br>
+          Он подтвердит запись и после сессии пришлёт ссылку на оплату.
         </p>
 
         <div class="summary" id="s4-summary" style="text-align:left; margin-bottom:24px;">
@@ -594,7 +594,7 @@
 
         <a class="tg-btn" id="tg-link" href="#" target="_blank" rel="noopener">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2 15 22 11 13 2 9 22 2Z" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
-          Отправить заявку в Telegram
+          Подтвердить запись в боте
         </a>
 
         <button class="restart-btn" onclick="restart()">Записаться ещё раз</button>
@@ -605,10 +605,10 @@
 
 <script>
   // ─── НАСТРОЙКИ ──────────────────────────────────────────────────────────────
-  const TG_USERNAME  = 'liya_khrystenko';   // ← ваш username без @
-  const AVAIL_DAYS   = [1, 2, 3, 4, 5];     // 0=вс 1=пн … 6=сб  (1-5 = будни)
+  const BOT_USERNAME = 'YOUR_BOT_USERNAME'; // ← username вашего Telegram-бота без @
+  const AVAIL_DAYS   = [1, 2, 3, 4, 5];    // 0=вс 1=пн … 6=сб  (1-5 = будни)
   const TIME_SLOTS   = ['10:00','11:00','13:00','14:00','16:00','17:00','19:00'];
-  const BOOKED       = [];                   // занятые слоты: ['2026-06-15 14:00']
+  const BOOKED       = [];                  // занятые слоты: ['2026-06-15 14:00']
   // ────────────────────────────────────────────────────────────────────────────
 
   const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
@@ -764,8 +764,8 @@
     if (!contact) { shake('f-contact'); return; }
 
     const ds  = humanDate(selDate);
-    const msg = buildMsg(ds, selTime, name, contact, topic);
-    const url = `https://t.me/${TG_USERNAME}?text=${encodeURIComponent(msg)}`;
+    const encoded = encodeBotData(name, selDate, selTime, contact);
+    const url = `https://t.me/${BOT_USERNAME}?start=bk_${encoded}`;
 
     document.getElementById('s4-date').textContent    = ds;
     document.getElementById('s4-time').textContent    = selTime;
@@ -800,10 +800,18 @@
     return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;
   }
 
-  function buildMsg(date, time, name, contact, topic) {
-    let m = `📅 Запись на консультацию\n\nДата: ${date}\nВремя: ${time}\nИмя: ${name}\nКонтакт: ${contact}`;
-    if (topic) m += `\n\nЗапрос:\n${topic}`;
-    return m;
+  function encodeBotData(name, date, time, contact) {
+    const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun',
+                       'Jul','Aug','Sep','Oct','Nov','Dec'];
+    const compactDate = `${date.getDate()}${MONTHS_EN[date.getMonth()]}${String(date.getFullYear()).slice(-2)}`;
+    const raw = [name.slice(0, 10), compactDate, time, contact.slice(0, 14)].join('|');
+    try {
+      return btoa(unescape(encodeURIComponent(raw)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        .slice(0, 61);
+    } catch(_) {
+      return 'book';
+    }
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
