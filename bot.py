@@ -33,6 +33,7 @@ GH_REPO       = os.environ.get("GITHUB_REPO",  "GRANT-AGENT-COURSE")
 PORT          = int(os.environ.get("PORT", 8080))
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "0"))   # ваш Telegram user_id
 PAYMENT_LINK  = os.environ.get("PAYMENT_LINK", "")          # ссылка на оплату
+TMA_URL       = os.environ.get("TMA_URL", "https://tma-diagnostic-prototype.vercel.app")
 
 if not TG_TOKEN:
     raise ValueError("TG_BOT_TOKEN is not set")
@@ -269,6 +270,22 @@ async def payment_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         await query.answer(f"❌ Ошибка: {exc}", show_alert=True)
 
 
+async def tunnel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open the Lia Strategy TMA (Body of Tunnel) as a Web App."""
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "🚀 Открыть диагностику",
+            web_app={"url": TMA_URL},
+        )
+    ]])
+    await update.message.reply_text(
+        "✦ *Тело туннеля*\n\n"
+        "Нажмите кнопку ниже, чтобы пройти диагностику и записаться на созвон.",
+        parse_mode="Markdown",
+        reply_markup=kb,
+    )
+
+
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "✦ *Помощь — Grant Architect Bot*\n\n"
@@ -501,6 +518,7 @@ async def main() -> None:
     # 2. Build Telegram application
     tg_app = Application.builder().token(TG_TOKEN).build()
     tg_app.add_handler(CommandHandler("start",     start))
+    tg_app.add_handler(CommandHandler("tunnel",    tunnel_cmd))
     tg_app.add_handler(CommandHandler("help",      help_cmd))
     tg_app.add_handler(CommandHandler("grant",     grant_cmd))
     tg_app.add_handler(CommandHandler("project",   project_cmd))
